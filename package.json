@@ -1,0 +1,17 @@
+{
+  "name": "landing-scroll-drone",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node tests/quad-math.test.mjs",
+    "qa": "node qa/capture.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "vite": "^8.3.2"
+  }
+}
