@@ -1,0 +1,4 @@
+# Deja fijo cómo se construye el sitio, sin depender de la configuración del panel.
+[build]
+  command = "npm run build"
+  publish = "dist"
