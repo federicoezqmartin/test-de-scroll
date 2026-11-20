@@ -9,7 +9,7 @@ export const artUrl = (name) => BASE + name;
 
 // Devuelve siempre la misma textura para un mismo nombre; nadie debe hacerle dispose.
 export function tex(name, { repeat = false, data = false } = {}) {
-  const key = name + (repeat ? ':r' : '');
+  const key = name + (repeat ? ':r' : '');  // la misma imagen puede existir con y sin repetición
   let t = cache.get(key);
   if (!t) {
     t = loader.load(BASE + name);
@@ -26,4 +26,7 @@ export function preloadArt() {
   for (const n of ['arena.webp', 'pasto.webp']) tex(n, { repeat: true });
   for (const n of ['piedra.webp', 'cajon.webp', 'nucleo.webp', 'mat-acero.webp', 'mat-naranja.webp', 'mat-lava.webp', 'mat-lava-brillo.webp']) tex(n);
   tex('mat-plumas.webp', { repeat: true });
+  for (const n of ['arena-n.webp', 'pasto-n.webp']) tex(n, { repeat: true, data: true });
+  for (const n of ['piedra-n.webp', 'cajon-n.webp', 'mat-acero-n.webp', 'mat-lava-n.webp']) tex(n, { data: true });
+  tex('mat-plumas-n.webp', { repeat: true, data: true });
 }

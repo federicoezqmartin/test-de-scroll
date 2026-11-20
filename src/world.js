@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { MAP_HALF } from './data.js';
 import { tex } from './assets.js';
+import { waterMaterial, seaMaterial, grassMaterial } from './shaders.js';
 
 export const T = { FLOOR: 0, WALL: 1, CRATE: 2, WATER: 3, BUSH: 4, CORE: 5 };
 const CHAR = { '.': T.FLOOR, '#': T.WALL, X: T.CRATE, '~': T.WATER, g: T.BUSH, M: T.CORE };
@@ -16,6 +17,26 @@ function rng(seed) {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+// Halo oscuro alrededor de una huella cuadrada (la huella ocupa el centro, 1 de cada 1.9).
+function contactTexture() {
+  const S = 128, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  const half = 0.5 / 1.9;
+  for (let y = 0; y < S; y++)
+    for (let x = 0; x < S; x++) {
+      const u = Math.abs((x + 0.5) / S - 0.5), v = Math.abs((y + 0.5) / S - 0.5);
+      const d = Math.hypot(Math.max(u - half, 0), Math.max(v - half, 0)) * 1.9;
+      const a = Math.max(0, 1 - d / 0.42) ** 2.2;
+      const k = (y * S + x) * 4;
+      img.data[k] = img.data[k + 1] = img.data[k + 2] = 255;
+      img.data[k + 3] = Math.round(a * 200);
+    }
+  g.putImageData(img, 0, 0);
+  return new THREE.CanvasTexture(c);
 }
 
 export class World {
@@ -210,10 +231,12 @@ export class World {
       return g;
     };
     const sand = new THREE.Mesh(quads(sandQuads, 3.2, 0.022), this.keep(new THREE.MeshStandardMaterial({
-      map: tex('arena.webp', { repeat: true }), vertexColors: true, roughness: 0.95,
+      map: tex('arena.webp', { repeat: true }), normalMap: tex('arena-n.webp', { repeat: true, data: true }),
+      normalScale: new THREE.Vector2(1.5, 1.5), vertexColors: true, roughness: 0.92,
     })));
     const lawn = new THREE.Mesh(quads(grassQuads, 2.4, 0), this.keep(new THREE.MeshStandardMaterial({
-      map: tex('pasto.webp', { repeat: true }), vertexColors: true, roughness: 1,
+      map: tex('pasto.webp', { repeat: true }), normalMap: tex('pasto-n.webp', { repeat: true, data: true }),
+      vertexColors: true, roughness: 1,
     })));
     sand.receiveShadow = lawn.receiveShadow = true;
     this.group.add(sand, lawn);
@@ -237,7 +260,10 @@ export class World {
       shadeAttr[v * 3] = shadeAttr[v * 3 + 1] = shadeAttr[v * 3 + 2] = k;
     }
     wallGeo.setAttribute('color', new THREE.BufferAttribute(shadeAttr, 3));
-    const wallMat = this.keep(new THREE.MeshStandardMaterial({ map: tex('piedra.webp'), roughness: 0.9, vertexColors: true }));
+    const wallMat = this.keep(new THREE.MeshStandardMaterial({
+      map: tex('piedra.webp'), normalMap: tex('piedra-n.webp', { data: true }), normalScale: new THREE.Vector2(1.6, 1.6),
+      roughness: 0.88, vertexColors: true,
+    }));
     const wallMesh = new THREE.InstancedMesh(wallGeo, wallMat, walls.length);
     wallMesh.castShadow = wallMesh.receiveShadow = true;
     const stone = [0xffffff, 0xe9eef3, 0xf4efe6];
@@ -256,7 +282,9 @@ export class World {
     // Cajones.
     if (crates.length) {
       const crateGeo = this.keep(new THREE.BoxGeometry(0.94, 0.94, 0.94));
-      const crateMat = this.keep(new THREE.MeshStandardMaterial({ map: tex('cajon.webp'), roughness: 0.85 }));
+      const crateMat = this.keep(new THREE.MeshStandardMaterial({
+        map: tex('cajon.webp'), normalMap: tex('cajon-n.webp', { data: true }), normalScale: new THREE.Vector2(1.4, 1.4), roughness: 0.8,
+      }));
       const crateMesh = new THREE.InstancedMesh(crateGeo, crateMat, crates.length);
       crateMesh.castShadow = crateMesh.receiveShadow = true;
       crates.forEach(([x, z], n) => {
@@ -270,71 +298,131 @@ export class World {
       this.group.add(crateMesh);
     }
 
-    // Agua.
-    const waterGeo = this.keep(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
-    this.waterMat = this.keep(new THREE.MeshStandardMaterial({
-      color: 0x35c9d8, transparent: true, opacity: 0.82, roughness: 0.08, metalness: 0.2,
-      emissive: 0x0a5f6e, emissiveIntensity: 0.45,
+    // Sombra de contacto pintada alrededor de muros y cajones (oclusión barata, en toda calidad).
+    const aoList = [...walls.filter((w) => !w[3]), ...crates, [this.reactor.x, this.reactor.z]];
+    const aoGeo = this.keep(new THREE.PlaneGeometry(1.9, 1.9).rotateX(-Math.PI / 2));
+    const aoMat = this.keep(new THREE.MeshBasicMaterial({
+      map: this.keep(contactTexture()), color: 0x1a0f05, transparent: true, depthWrite: false, opacity: 0.85,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     }));
-    this.water = new THREE.InstancedMesh(waterGeo, this.waterMat, Math.max(1, waterTiles.length));
-    this.water.count = waterTiles.length;
-    waterTiles.forEach(([x, z], n) => {
-      dummy.position.set(x, 0, z);
+    const aoMesh = new THREE.InstancedMesh(aoGeo, aoMat, aoList.length);
+    aoList.forEach(([x, z], n) => {
+      dummy.position.set(x, 0.006, z);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
-      this.water.setMatrixAt(n, dummy.matrix);
+      aoMesh.setMatrixAt(n, dummy.matrix);
     });
-    this.water.position.y = -0.16;
+    aoMesh.renderOrder = 1;
+    this.group.add(aoMesh);
+
+    // Agua: una sola malla; cada baldosa sabe qué lados dan a tierra para dibujar la espuma.
+    const isWater = (x, z) => this.type(this.col(x), this.row(z)) === T.WATER;
+    const wn = waterTiles.length;
+    const wPos = new Float32Array(wn * 12), wNor = new Float32Array(wn * 12), wEdge = new Float32Array(wn * 16), wLoc = new Float32Array(wn * 8), wIdx = [];
+    const corner = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    waterTiles.forEach(([x, z], k) => {
+      const e = [isWater(x - 1, z) ? 0 : 1, isWater(x + 1, z) ? 0 : 1, isWater(x, z - 1) ? 0 : 1, isWater(x, z + 1) ? 0 : 1];
+      [[x - 0.5, z - 0.5], [x + 0.5, z - 0.5], [x + 0.5, z + 0.5], [x - 0.5, z + 0.5]].forEach(([px, pz], v) => {
+        wPos.set([px, 0, pz], k * 12 + v * 3);
+        wNor.set([0, 1, 0], k * 12 + v * 3);
+        wEdge.set(e, k * 16 + v * 4);
+        wLoc.set(corner[v], k * 8 + v * 2);
+      });
+      wIdx.push(k * 4, k * 4 + 3, k * 4 + 2, k * 4, k * 4 + 2, k * 4 + 1);
+    });
+    const waterGeo = this.keep(new THREE.BufferGeometry());
+    waterGeo.setAttribute('position', new THREE.BufferAttribute(wPos, 3));
+    waterGeo.setAttribute('normal', new THREE.BufferAttribute(wNor, 3));
+    waterGeo.setAttribute('aEdge', new THREE.BufferAttribute(wEdge, 4));
+    waterGeo.setAttribute('aLocal', new THREE.BufferAttribute(wLoc, 2));
+    waterGeo.setIndex(wIdx);
+    this.water = new THREE.Mesh(waterGeo, this.keep(waterMaterial()));
+    this.water.position.y = -0.14;
     this.water.receiveShadow = true;
     this.group.add(this.water);
 
-    // Pasto alto: matas de hojas finas sobre cada baldosa de pasto.
+    // Pasto alto: matas de hojas finas; el viento y el paso de los luchadores van en el shader.
     const PER = 18;
-    const bladeGeo = this.keep(new THREE.ConeGeometry(0.085, 1, 4, 1).translate(0, 0.5, 0));
+    const bladeGeo = this.keep(new THREE.ConeGeometry(0.085, 1, 4, 3).translate(0, 0.5, 0));
     const bp = bladeGeo.attributes.position;
     const bc = new Float32Array(bp.count * 3);
     for (let v = 0; v < bp.count; v++) {
-      const k = 0.45 + 0.75 * bp.getY(v);
+      const k = 0.4 + 0.8 * bp.getY(v);
       bc[v * 3] = bc[v * 3 + 1] = bc[v * 3 + 2] = k;
     }
     bladeGeo.setAttribute('color', new THREE.BufferAttribute(bc, 3));
-    const bushMat = this.keep(new THREE.MeshStandardMaterial({ roughness: 0.85, vertexColors: true, flatShading: true }));
-    this.bushMesh = new THREE.InstancedMesh(bladeGeo, bushMat, Math.max(1, bushTiles.length * PER));
+    this.bushMesh = new THREE.InstancedMesh(bladeGeo, this.keep(grassMaterial()), Math.max(1, bushTiles.length * PER));
     this.bushMesh.count = bushTiles.length * PER;
     this.bushMesh.castShadow = true;
     this.bushMesh.receiveShadow = true;
-    this.bushes = [];
-    this.bushIndex = new Map();
+    this.bushMesh.frustumCulled = false;
+    this.bushMesh.userData.noAO = true;
     const greens = [0x5fae2e, 0x4d9a26, 0x78bf3a, 0x8fc440, 0x3f8a22];
     bushTiles.forEach(([x, z], n) => {
-      const blobs = [];
       for (let k = 0; k < PER; k++) {
-        blobs.push({
-          x: x + (rand() - 0.5) * 0.94, z: z + (rand() - 0.5) * 0.94,
-          sx: 0.8 + rand() * 0.8, sy: 0.6 + rand() * 0.45, ry: rand() * 6.28, ph: rand() * 6.28,
-          lx: (rand() - 0.5) * 0.5, lz: (rand() - 0.5) * 0.5,
-        });
+        const sx = 0.8 + rand() * 0.8;
+        dummy.position.set(x + (rand() - 0.5) * 0.94, 0, z + (rand() - 0.5) * 0.94);
+        dummy.scale.set(sx, 0.6 + rand() * 0.45, sx);
+        dummy.rotation.set((rand() - 0.5) * 0.5, rand() * 6.28, (rand() - 0.5) * 0.5);
+        dummy.updateMatrix();
+        this.bushMesh.setMatrixAt(n * PER + k, dummy.matrix);
         col.set(greens[Math.floor(rand() * greens.length)]);
         this.bushMesh.setColorAt(n * PER + k, col);
       }
-      const b = { x, z, blobs, sq: 0, target: 0 };
-      this.bushes.push(b);
-      this.bushIndex.set(this.row(z) * W + this.col(x), b);
     });
+    dummy.rotation.set(0, 0, 0);
     this.group.add(this.bushMesh);
     this.dummy = dummy;
 
-    // Isla de roca y mar.
+    // Isla: acantilado de roca, piedras sueltas al pie y mar con oleaje.
+    const cliffMap = tex('piedra.webp').clone();
+    cliffMap.wrapS = cliffMap.wrapT = THREE.RepeatWrapping;
+    cliffMap.repeat.set(7, 1);
+    cliffMap.needsUpdate = true;
+    const cliffN = tex('piedra-n.webp', { data: true }).clone();
+    cliffN.wrapS = cliffN.wrapT = THREE.RepeatWrapping;
+    cliffN.repeat.set(7, 1);
+    cliffN.needsUpdate = true;
+    this.keep(cliffMap);
+    this.keep(cliffN);
     const baseGeo = this.keep(new THREE.BoxGeometry(W + 2, 3, H + 2));
-    const baseMat = this.keep(new THREE.MeshStandardMaterial({ color: 0x5b4c40, roughness: 1 }));
+    const baseMat = this.keep(new THREE.MeshStandardMaterial({
+      map: cliffMap, normalMap: cliffN, normalScale: new THREE.Vector2(2, 2), color: 0x9a8672, roughness: 1,
+    }));
     const base = new THREE.Mesh(baseGeo, baseMat);
     base.position.y = -2.14;
     base.receiveShadow = true;
     this.group.add(base);
-    const seaGeo = this.keep(new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2));
-    const seaMat = this.keep(new THREE.MeshStandardMaterial({ color: 0x0f6f86, roughness: 0.25, metalness: 0.15 }));
-    const sea = new THREE.Mesh(seaGeo, seaMat);
+
+    const rockGeo = this.keep(new THREE.IcosahedronGeometry(1, 1));
+    const rockMat = this.keep(new THREE.MeshStandardMaterial({ color: 0xa39484, roughness: 1, flatShading: true }));
+    const rocks = [];
+    const hw = W / 2 + 1, hh = H / 2 + 1;
+    for (let k = 0; k < 64; k++) {
+      const side = k % 4, t = rand() * 2 - 1;
+      const out = 0.1 + rand() * 1.1;
+      const x = side < 2 ? t * hw : (side === 2 ? -1 : 1) * (hw + out);
+      const z = side < 2 ? (side === 0 ? -1 : 1) * (hh + out) : t * hh;
+      rocks.push([x, -3.1 + rand() * 1.5, z, 0.6 + rand() * 1.2]);
+    }
+    const rockMesh = new THREE.InstancedMesh(rockGeo, rockMat, rocks.length);
+    rocks.forEach(([x, y, z, sc], n) => {
+      dummy.position.set(x, y, z);
+      dummy.scale.set(sc * (0.8 + rand() * 0.5), sc * (0.7 + rand() * 0.8), sc * (0.8 + rand() * 0.5));
+      dummy.rotation.set(rand() * 3, rand() * 3, rand() * 3);
+      dummy.updateMatrix();
+      rockMesh.setMatrixAt(n, dummy.matrix);
+      col.set(0xa39484).offsetHSL(0, 0, (rand() - 0.5) * 0.1);
+      rockMesh.setColorAt(n, col);
+    });
+    dummy.rotation.set(0, 0, 0);
+    rockMesh.receiveShadow = true;
+    this.group.add(rockMesh);
+
+    const seaGeo = this.keep(new THREE.PlaneGeometry(420, 420).rotateX(-Math.PI / 2));
+    const sea = new THREE.Mesh(seaGeo, this.keep(seaMaterial(hw, hh)));
     sea.position.y = -3;
+    sea.receiveShadow = true;
     this.group.add(sea);
 
     // Plataformas de salida.
@@ -397,30 +485,7 @@ export class World {
     this.group.add(g);
   }
 
-  // Aplasta el pasto donde hay un luchador visible; el resto se mece.
-  update(time, dt, occupied) {
-    for (const b of this.bushes) b.target = 0;
-    for (const o of occupied) {
-      const b = this.bushIndex.get(this.row(o.z) * this.W + this.col(o.x));
-      if (b) b.target = 1;
-    }
-    const d = this.dummy;
-    let n = 0;
-    for (const b of this.bushes) {
-      b.sq += (b.target - b.sq) * Math.min(1, dt * 10);
-      for (const k of b.blobs) {
-        const sway = Math.sin(time * 1.9 + k.ph) * 0.07;
-        d.position.set(k.x, 0, k.z);
-        d.scale.set(k.sx, k.sy * (1 - b.sq * 0.55), k.sx);
-        d.rotation.set(k.lx * (1 + b.sq * 1.6) + sway, k.ry, k.lz * (1 + b.sq * 1.6) + sway * 0.6);
-        d.updateMatrix();
-        this.bushMesh.setMatrixAt(n++, d.matrix);
-      }
-    }
-    this.bushMesh.instanceMatrix.needsUpdate = true;
-    d.rotation.set(0, 0, 0);
-
-    this.water.position.y = -0.16 + Math.sin(time * 1.3) * 0.02;
+  update(time) {
     this.coreOrb.rotation.y = time * 1.4;
     this.coreOrb.rotation.x = time * 0.8;
     this.coreOrb.position.y = 0.93 + Math.sin(time * 2.2) * 0.1;

@@ -97,6 +97,18 @@ export class UI {
 
   setPaused(p) { $('pause').hidden = !p; }
 
+  setQuality(label) {
+    for (const b of document.querySelectorAll('.q-label')) b.textContent = label;
+  }
+
+  toast(text) {
+    const t = $('toast');
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(this.toastT);
+    this.toastT = setTimeout(() => { t.hidden = true; }, 5000);
+  }
+
   // ------------------------------------------------------------------ HUD --
   makeTag(f) {
     const root = el('div', `tag t${f.team}${f.isPlayer ? ' me' : ''}`);

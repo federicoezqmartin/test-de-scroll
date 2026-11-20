@@ -88,3 +88,20 @@ for n,k,b in [('naranja','hoja-tuerca',(260,690,380,730)),('rana','guia-pompa',(
 tot=0
 for f in sorted(os.listdir(OUT)): s=os.path.getsize(OUT+f); tot+=s; print(f, s//1024,'KB', Image.open(OUT+f).size)
 print('total KB',tot//1024,'refs KB',sum(os.path.getsize(REF+f) for f in os.listdir(REF))//1024)
+
+# Mapas de relieve (normal maps) derivados del brillo de cada textura.
+def normal_map(name, strength, wrap, invert_hot=False):
+    a=np.asarray(Image.open(OUT+name+'.webp').convert('RGB')).astype(np.float32)/255
+    h=a@np.array([0.299,0.587,0.114],np.float32)
+    if invert_hot:  # en la lava, lo que brilla es grieta: va hundido
+        hot=np.clip(((a[...,0]-a[...,2])-0.27)/0.35,0,1); h=h*(1-hot)-hot*0.25
+    h=np.asarray(Image.fromarray(np.clip(h*255,0,255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.1))).astype(np.float32)/255
+    if wrap:
+        dx=(np.roll(h,-1,1)-np.roll(h,1,1))/2; dy=(np.roll(h,-1,0)-np.roll(h,1,0))/2
+    else:
+        dy,dx=np.gradient(h)
+    n=np.stack([-dx*strength,dy*strength,np.ones_like(h)],-1); n/=np.linalg.norm(n,axis=-1,keepdims=True)
+    Image.fromarray(((n*0.5+0.5)*255).astype(np.uint8)).save(OUT+name+'-n.webp',quality=92)
+normal_map('arena',5,True); normal_map('piedra',9,False); normal_map('cajon',8,False)
+normal_map('mat-acero',4,False); normal_map('mat-lava',7,False,invert_hot=True); normal_map('mat-plumas',6,False)
+normal_map('pasto',5,True)

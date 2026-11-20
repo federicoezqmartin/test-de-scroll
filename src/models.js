@@ -3,10 +3,12 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { tex } from './assets.js';
+import { heroUniforms, patchHero } from './shaders.js';
 
 const PI = Math.PI;
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.05, ...o });
-const glow = (color, k = 1.8) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: k * 0.55, roughness: 0.4 });
+const glow = (color, k = 1.8) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: k * 0.8, roughness: 0.4 });
+const steelN = () => ({ normalMap: tex('mat-acero-n.webp', { data: true }), normalScale: new THREE.Vector2(1.3, 1.3) });
 
 function part(geo, mat, parent, x = 0, y = 0, z = 0) {
   const m = new THREE.Mesh(geo, mat);
@@ -75,8 +77,8 @@ function baseRig(hipY, height) {
 // --- Tuerca: robot de taller, casco enorme y brazo taladro --------------------
 function tuerca() {
   const r = baseRig(0.3, 1.72);
-  const steel = std(0xffffff, { map: tex('mat-acero.webp'), metalness: 0.75, roughness: 0.42 });
-  const orange = std(0xffffff, { map: tex('mat-naranja.webp'), metalness: 0.3, roughness: 0.62 });
+  const steel = std(0xffffff, { map: tex('mat-acero.webp'), metalness: 0.75, roughness: 0.42, ...steelN() });
+  const orange = std(0xffffff, { map: tex('mat-naranja.webp'), metalness: 0.3, roughness: 0.62, ...steelN() });
   const dark = std(0x3a3837, { metalness: 0.6, roughness: 0.5 });
   const glass = std(0x07090d, { roughness: 0.1, metalness: 0.5 });
   const hazard = std(0xffffff, { map: hazardTex(), metalness: 0.3, roughness: 0.6 });
@@ -143,7 +145,8 @@ function tuerca() {
 function brasa() {
   const r = baseRig(0.3, 1.6);
   const rock = new THREE.MeshStandardMaterial({
-    map: tex('mat-lava.webp'), emissiveMap: tex('mat-lava-brillo.webp'), emissive: 0xffffff, emissiveIntensity: 1.5,
+    map: tex('mat-lava.webp'), emissiveMap: tex('mat-lava-brillo.webp'), emissive: 0xffffff, emissiveIntensity: 1.8,
+    normalMap: tex('mat-lava-n.webp', { data: true }), normalScale: new THREE.Vector2(1.6, 1.6),
     roughness: 0.95, flatShading: true,
   });
   const stone = std(0x3a3231, { flatShading: true, roughness: 0.95 });
@@ -193,7 +196,7 @@ function brasa() {
     f1.scale.set(1, k, 1);
     f2.scale.set(1, 2 - k, 1);
     f3.rotation.z = 0.3 + Math.sin(s.t * 9) * 0.2;
-    rock.emissiveIntensity = 1.4 + Math.sin(s.t * 3 + r.seed) * 0.35 + s.kick * 1.4;
+    rock.emissiveIntensity = 1.7 + Math.sin(s.t * 3 + r.seed) * 0.4 + s.kick * 1.8;
     r.armL.rotation.x -= s.kick * 1.5;
     r.armL.rotation.z = 0.12;
     r.armR.rotation.z = -0.12;
@@ -206,7 +209,9 @@ function nox() {
   const r = baseRig(0.24, 1.55);
   const featherMap = tex('mat-plumas.webp', { repeat: true });
   featherMap.repeat.set(3, 2);
-  const feather = std(0xffffff, { map: featherMap, roughness: 0.85 });
+  const featherN = tex('mat-plumas-n.webp', { repeat: true, data: true });
+  featherN.repeat.set(3, 2);
+  const feather = std(0xffffff, { map: featherMap, normalMap: featherN, normalScale: new THREE.Vector2(1.5, 1.5), roughness: 0.8 });
   const navy = std(0x2f2f58, { roughness: 0.85 }), cream = std(0xeadfc6, { roughness: 0.8 });
   const gold = std(0xe0a020, { roughness: 0.4, metalness: 0.3 }), teal = glow(0x25e6c0, 1.7);
   const black = std(0x0d0d14, { roughness: 0.2 }), white = std(0xffffff, { roughness: 0.2 });
@@ -416,7 +421,7 @@ function tajo() {
   const shoe = std(0xd8cfc0, { roughness: 0.6 }), shoeG = std(0x8d8d92, { roughness: 0.6 });
   const leather = std(0x7a4a26, { roughness: 0.7 }), tan = std(0xb08a52, { roughness: 0.9 }), wood = std(0x5e3a1e, { roughness: 0.8 });
   const brass = std(0xc9962e, { metalness: 0.6, roughness: 0.35 });
-  const steel = std(0xffffff, { map: tex('mat-acero.webp'), metalness: 0.7, roughness: 0.4 });
+  const steel = std(0xffffff, { map: tex('mat-acero.webp'), metalness: 0.7, roughness: 0.4, ...steelN() });
   const white = std(0xffffff, { roughness: 0.3 }), dark = std(0x24140f, { roughness: 0.6 }), lamp = glow(0x9dff3a, 2.6);
 
   for (const [leg, x] of [[r.legL, 0.14], [r.legR, -0.14]]) {
@@ -493,7 +498,11 @@ function tajo() {
 const BUILDERS = { tuerca, brasa, nox, pompa, zip, tajo };
 
 export function buildHero(id) {
-  return (BUILDERS[id] || tuerca)();
+  const r = (BUILDERS[id] || tuerca)();
+  // Todos los materiales del personaje comparten borde de luz y destello de daño.
+  r.fxU = heroUniforms();
+  r.root.traverse((o) => { if (o.isMesh) patchHero(o.material, r.fxU); });
+  return r;
 }
 
 // s = { t, move (0..1), phase, kick (1 -> 0 tras atacar) }

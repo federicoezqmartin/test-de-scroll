@@ -126,6 +126,10 @@ button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 .cta { grid-area: cta; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
 .cta .goal { margin: 0; max-width: 46ch; font-size: 15px; line-height: 1.4; color: #dbe5f5; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
 .cta .goal b { color: var(--lime); font-weight: 600; }
+.chip-btn { align-self: center; padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.chip-btn b { color: var(--ink); font-weight: 600; }
+.chip-btn:hover { background: rgba(255, 255, 255, 0.18); }
+#toast { position: absolute; left: 50%; bottom: calc(84px + var(--safe-b)); transform: translateX(-50%); max-width: min(92vw, 460px); padding: 10px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; text-align: center; animation: slide 0.25s; }
 .keys { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.4; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
 
 /* Celular vertical */

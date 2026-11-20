@@ -9,6 +9,7 @@ import { Input } from './input.js';
 import { UI } from './ui.js';
 import { audio } from './audio.js';
 import { artUrl, preloadArt } from './assets.js';
+import { Gfx, QUALITY, QUALITY_ORDER } from './gfx.js';
 
 const canvas = document.getElementById('game');
 const coarse = matchMedia('(pointer: coarse)').matches;
@@ -21,17 +22,29 @@ try {
   document.getElementById('menu').hidden = true;
   throw new Error('WebGL no disponible');
 }
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse ? 1.75 : 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.0;
 
 // Entorno suave para que los metales y el vidrio tengan reflejos.
 const pmrem = new THREE.PMREMGenerator(renderer);
 const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 pmrem.dispose();
 preloadArt();
+
+// Calidad gráfica. Arranca en Alta (Media en táctiles); si la partida no llega a ~27 cuadros
+// por segundo baja sola un nivel. Elegirla a mano, o pasar ?q=alta|media|baja, apaga ese ajuste.
+const gfx = new Gfx(renderer);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* sin storage */ } },
+};
+const urlQ = new URLSearchParams(location.search).get('q');
+const manualQ = QUALITY[urlQ] ? urlQ : QUALITY[store.get('tuzanja-calidad')] ? store.get('tuzanja-calidad') : null;
+let autoQuality = !manualQ;
+let fpsFrames = 0, fpsTime = 0, fpsWarm = 0; // medición de cuadros por segundo (ver watchFps)
+let qualityName = manualQ || (QUALITY[store.get('tuzanja-calidad-auto')] ? store.get('tuzanja-calidad-auto') : coarse ? 'media' : 'alta');
 
 const ui = new UI();
 const input = new Input({
@@ -155,7 +168,6 @@ class Showcase {
     this.scene.background = prevBg;
     this.scene.fog = prevFog;
     if (keepRig) this.spin.add(keepRig.root);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse ? 1.75 : 2));
     return out;
   }
 }
@@ -168,7 +180,7 @@ let lastHero = ui.selected;
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
-  renderer.setSize(w, h, false);
+  gfx.setSize(w, h);
   if (match) match.resize(w, h);
   if (state === 'menu') showcase.frame(w, h, ui.stage.getBoundingClientRect());
 }
@@ -190,7 +202,7 @@ function startMatch(heroId) {
   ui.resetHud();
   lastHero = heroId;
   match = new Match({
-    heroId, input, hud: ui, layer: ui.layer, env: envMap, lowQuality: coarse,
+    heroId, input, hud: ui, layer: ui.layer, env: envMap, quality: gfx.q,
     onEnd: (res) => {
       state = 'results';
       input.enabled = false;
@@ -200,6 +212,7 @@ function startMatch(heroId) {
   });
   state = 'match';
   paused = false;
+  fpsWarm = 0;
   input.reset();
   input.enabled = true;
   ui.setHints(input.touch || coarse);
@@ -223,6 +236,25 @@ ui.onSelect = (id, byUser) => {
 const portraits = showcase.portraits();
 for (const h of HEROES) if (h.art) portraits[h.id] = artUrl(h.art);
 ui.buildRoster(portraits);
+
+function setQuality(name, manual) {
+  qualityName = name;
+  fpsWarm = 0;
+  gfx.setQuality(name);
+  if (match) match.setQuality(gfx.q);
+  ui.setQuality(QUALITY[name].label);
+  if (manual) {
+    autoQuality = false;
+    store.set('tuzanja-calidad', name);
+  } else store.set('tuzanja-calidad-auto', name);
+}
+const cycleQuality = () => {
+  audio.unlock();
+  audio.play('ui');
+  setQuality(QUALITY_ORDER[(QUALITY_ORDER.indexOf(qualityName) + 1) % QUALITY_ORDER.length], true);
+};
+setQuality(qualityName, !!manualQ && !urlQ ? true : false);
+if (urlQ && QUALITY[urlQ]) autoQuality = false;
 ui.setHints(coarse);
 ui.show('menu');
 
@@ -233,6 +265,8 @@ on('change', toMenu);
 on('resume', togglePause);
 on('quit', toMenu);
 on('btn-pause', togglePause);
+on('btn-quality', cycleQuality);
+on('btn-quality-2', cycleQuality);
 const muteBtn = document.getElementById('btn-mute');
 muteBtn.classList.toggle('off', audio.muted);
 muteBtn.addEventListener('click', () => {
@@ -253,20 +287,45 @@ document.addEventListener('visibilitychange', () => {
 if (document.fonts?.ready) document.fonts.ready.then(resize);
 resize();
 
+// Mide los cuadros por segundo durante el juego y baja la calidad si no alcanza.
+// Espera unos segundos tras empezar o cambiar de nivel, porque ahí se compilan shaders.
+function watchFps(raw) {
+  if (!autoQuality || paused || state !== 'match' || match.state !== 'play' || raw > 3) {
+    fpsFrames = fpsTime = 0;
+    return;
+  }
+  if (fpsWarm < 3) {
+    fpsWarm += raw;
+    return;
+  }
+  fpsFrames++;
+  fpsTime += raw;
+  if (fpsTime < 2.5) return;
+  const fps = fpsFrames / fpsTime;
+  fpsFrames = fpsTime = 0;
+  const i = QUALITY_ORDER.indexOf(qualityName);
+  if (fps < 27 && i > 0) {
+    setQuality(QUALITY_ORDER[i - 1], false);
+    ui.toast(`Bajé los gráficos a ${QUALITY[qualityName].label} para que vaya más fluido. Se cambia desde Pausa.`);
+  }
+}
+
 let last = performance.now();
 function loop(now) {
   requestAnimationFrame(loop);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const raw = (now - last) / 1000;
+  const dt = Math.min(0.05, raw);
   last = now;
   if (state === 'menu') {
     showcase.update(dt);
-    renderer.render(showcase.scene, showcase.camera);
+    gfx.render(showcase.scene, showcase.camera, dt);
   } else if (match) {
     if (!paused) match.update(dt);
-    renderer.render(match.scene, match.camera);
+    gfx.render(match.scene, match.camera, dt);
+    watchFps(raw);
   }
 }
 requestAnimationFrame(loop);
 
 // Gancho de depuración para pruebas automáticas.
-window.__trifulca = { get match() { return match; }, get state() { return state; }, input, startMatch, toMenu };
+window.__trifulca = { get match() { return match; }, get state() { return state; }, get quality() { return qualityName; }, gfx, input, startMatch, toMenu, setQuality };

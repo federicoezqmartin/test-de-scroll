@@ -6,6 +6,7 @@ import { World } from './world.js';
 import { Fx } from './fx.js';
 import { audio } from './audio.js';
 import { Bot } from './ai.js';
+import { shaderTime, grassFighters, shieldMaterial, zoneMaterial, indicatorMaterial } from './shaders.js';
 
 const R = 0.4; // radio de un luchador
 const DEG = Math.PI / 180;
@@ -29,9 +30,15 @@ const shuffle = (a) => {
 const SHOT_COLOR = { bolt: 0xffc23a, ember: 0xff8a2a, dart: 0x7df9ff, orb: 0x39e6ff, flask: 0xff6fd0, bigflask: 0x9dff3a };
 const ZONE_COLOR = { stars: 0xa98bff, toxic: 0x8dff4a };
 const ENEMY_COLOR = 0xff3355;
+const UP = new THREE.Vector3(0, 1, 0);
+const DEFAULT_Q = { shadow: 2048, shadowRadius: 2.4, lights: 0, boost: 1, fxScale: 1 };
 
 export class Match {
-  constructor({ heroId, input, hud, layer, onEnd, env = null, lowQuality = false }) {
+  constructor({ heroId, input, hud, layer, onEnd, env = null, quality = null }) {
+    const q = (this.q = quality || DEFAULT_Q);
+    this.hitStop = 0;
+    this.zoomKick = 0;
+    this.ambT = 0;
     this.input = input;
     this.hud = hud;
     this.onEnd = onEnd;
@@ -53,7 +60,7 @@ export class Match {
     scene.fog = new THREE.Fog(0x0f6f86, 70, 150);
     if (env) {
       scene.environment = env;
-      scene.environmentIntensity = 0.55;
+      scene.environmentIntensity = 0.38;
     }
     this.camera = new THREE.PerspectiveCamera(36, 1, 1, 240);
     this.camT = new THREE.Vector3();
@@ -62,17 +69,26 @@ export class Match {
     this.limZ0 = -10;
     this.limZ1 = 10;
 
-    scene.add(new THREE.HemisphereLight(0xdcefff, 0xb08d5c, 0.95));
-    const sun = (this.sun = new THREE.DirectionalLight(0xffe2b8, 2.9));
+    // Sol cálido con sombras, relleno frío sin sombras desde el lado de la cámara.
+    scene.add(new THREE.HemisphereLight(0xcfe6ff, 0xa9814e, 0.6));
+    const sun = (this.sun = new THREE.DirectionalLight(0xffdfb0, 3.4));
     sun.castShadow = true;
-    const q = lowQuality ? 1024 : 2048;
-    sun.shadow.mapSize.set(q, q);
-    sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.03;
+    sun.shadow.mapSize.set(q.shadow, q.shadow);
+    sun.shadow.radius = q.shadowRadius;
+    sun.shadow.bias = -0.0003;
+    sun.shadow.normalBias = 0.025;
     scene.add(sun, sun.target);
+    const fill = new THREE.DirectionalLight(0x9fd0ff, 0.32);
+    fill.position.set(8, 10, 12);
+    scene.add(fill);
+    this.sunDir = new THREE.Vector3(-12, 17, -9).normalize();
+    this.lightRight = new THREE.Vector3().crossVectors(UP, this.sunDir).normalize();
+    this.lightUp = new THREE.Vector3().crossVectors(this.sunDir, this.lightRight);
+    this.shadowHalf = 15;
+    this.snapT = new THREE.Vector3();
 
     this.world = new World(scene);
-    this.fx = new Fx(scene, layer);
+    this.fx = new Fx(scene, layer, q);
     this.projectiles = [];
     this.lobs = [];
     this.zones = [];
@@ -81,7 +97,12 @@ export class Match {
     this.own = [];
 
     this.markerGeo = this.keep(new THREE.RingGeometry(0.46, 0.6, 32).rotateX(-Math.PI / 2));
-    this.shieldGeo = this.keep(new THREE.SphereGeometry(0.95, 20, 14));
+    this.shieldGeo = this.keep(new THREE.SphereGeometry(0.95, 24, 16));
+    this.blobGeo = this.keep(new THREE.PlaneGeometry(1.7, 1.7).rotateX(-Math.PI / 2));
+    this.blobMat = this.keep(new THREE.MeshBasicMaterial({
+      map: this.fx.halo, color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    }));
 
     // Equipos: el jugador + 2 aliados distintos, 3 rivales distintos.
     const others = shuffle(HEROES.filter((h) => h.id !== heroId).map((h) => h.id));
@@ -127,13 +148,16 @@ export class Match {
     f.ring = new THREE.Mesh(this.markerGeo, ringMat);
     f.ring.renderOrder = 2;
     this.scene.add(f.ring);
-    const shieldMat = new THREE.MeshBasicMaterial({
-      color: TEAMS[team].color, transparent: true, opacity: 0.25, depthWrite: false, toneMapped: false,
-    });
+    const shieldMat = shieldMaterial(TEAMS[team].color);
     f.shield = new THREE.Mesh(this.shieldGeo, shieldMat);
     f.shield.position.y = 0.75;
     f.shield.visible = false;
     rig.root.add(f.shield);
+    rig.fxU.uRim.value.set(isPlayer ? 0xfff0c0 : TEAMS[team].color).multiplyScalar(isPlayer ? 0.35 : 0.5);
+    f.blob = new THREE.Mesh(this.blobGeo, this.blobMat);
+    f.blob.renderOrder = 1;
+    this.scene.add(f.blob);
+    f.stepN = 0;
     this.own.push(ringMat, shieldMat);
     f.tag = this.hud.makeTag(f);
     if (!isPlayer) f.bot = new Bot(f, this, lane);
@@ -155,7 +179,7 @@ export class Match {
     this.limX = Math.max(0, W / 2 + 1.5 - halfW * 0.85);
     this.limZ1 = H / 2 + 1.3 - halfD * 0.8;
     this.limZ0 = Math.min(this.limZ1, -H / 2 - 1 + halfD * 0.9);
-    const half = Math.max(15, Math.min(26, perpH * 0.9));
+    const half = (this.shadowHalf = Math.max(15, Math.min(26, perpH * 0.9)));
     const sc = this.sun.shadow.camera;
     sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
     sc.near = 1; sc.far = 80;
@@ -173,7 +197,12 @@ export class Match {
         this.onEnd(this.result);
       }
     }
+    if (this.hitStop > 0) {
+      this.hitStop -= rawDt;
+      dt *= 0.08;
+    }
     this.time += dt;
+    shaderTime.value = this.time;
     this.input.update();
     if (this.state === 'intro') this.updateIntro(dt);
     this.controlPlayer();
@@ -266,11 +295,10 @@ export class Match {
 
   buildIndicator() {
     const g = (this.ind = new THREE.Group());
-    this.indMat = this.keep(new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
-    }));
-    this.indRect = new THREE.Mesh(this.keep(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0, 0, 0.5)), this.indMat);
-    this.indDisc = new THREE.Mesh(this.keep(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2)), this.indMat);
+    this.indMatR = this.keep(indicatorMaterial(0));
+    this.indMatC = this.keep(indicatorMaterial(1));
+    this.indRect = new THREE.Mesh(this.keep(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0, 0, 0.5)), this.indMatR);
+    this.indDisc = new THREE.Mesh(this.keep(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2)), this.indMatC);
     this.indFans = new Map();
     g.add(this.indRect, this.indDisc);
     g.renderOrder = 4;
@@ -282,7 +310,7 @@ export class Match {
     let m = this.indFans.get(arcDeg);
     if (!m) {
       const arc = arcDeg * DEG;
-      m = new THREE.Mesh(this.keep(new THREE.CircleGeometry(1, 24, -Math.PI / 2 - arc / 2, arc).rotateX(-Math.PI / 2)), this.indMat);
+      m = new THREE.Mesh(this.keep(new THREE.CircleGeometry(1, 24, -Math.PI / 2 - arc / 2, arc).rotateX(-Math.PI / 2)), this.indMatC);
       this.indFans.set(arcDeg, m);
       this.ind.add(m);
     }
@@ -295,8 +323,12 @@ export class Match {
     g.visible = true;
     g.position.set(p.x, 0.05, p.z);
     g.rotation.y = Math.atan2(a.x, a.z);
-    this.indMat.color.set(a.isSuper ? 0xffe14a : 0xffffff);
-    this.indMat.opacity = !a.isSuper && p.ammo < 1 ? 0.12 : a.isSuper ? 0.4 : 0.26;
+    const alpha = !a.isSuper && p.ammo < 1 ? 0.4 : a.isSuper ? 1.25 : 0.9;
+    for (const m of [this.indMatR, this.indMatC]) {
+      m.uniforms.uColor.value.set(a.isSuper ? 0xffe14a : 0xffffff);
+      m.uniforms.uAlpha.value = alpha;
+    }
+    const lenR = this.indMatR.uniforms.uLen, lenC = this.indMatC.uniforms.uLen;
     const s = a.spec;
     this.indRect.visible = this.indDisc.visible = false;
     for (const f of this.indFans.values()) f.visible = false;
@@ -304,31 +336,32 @@ export class Match {
       const f = this.fan(deg);
       f.visible = true;
       f.scale.setScalar(range);
+      lenC.value = range;
     };
     switch (s.kind) {
       case 'shots':
         if (s.spread > 0) showFan(s.spread + 12, s.range);
         else {
           this.indRect.visible = true;
-          this.indRect.scale.set(Math.max(0.42, s.radius * 2), 1, this.world.rayShot(p.x, p.z, a.x, a.z, s.range));
+          this.indRect.scale.set(Math.max(0.42, s.radius * 2), 1, (lenR.value = this.world.rayShot(p.x, p.z, a.x, a.z, s.range)));
         }
         break;
       case 'melee': showFan(s.arc, s.range); break;
       case 'dash':
         this.indRect.visible = true;
-        this.indRect.scale.set(s.width, 1, Math.max(0.3, this.dashLength(p, a.x, a.z, s.range)));
+        this.indRect.scale.set(s.width, 1, (lenR.value = Math.max(0.3, this.dashLength(p, a.x, a.z, s.range))));
         break;
       case 'line':
         this.indRect.visible = true;
-        this.indRect.scale.set(s.width, 1, Math.max(1, this.world.rayShot(p.x, p.z, a.x, a.z, s.range)));
+        this.indRect.scale.set(s.width, 1, (lenR.value = Math.max(1, this.world.rayShot(p.x, p.z, a.x, a.z, s.range))));
         break;
       default: {
         const d = clamp(a.dist, 1.2, s.range);
         this.indDisc.visible = true;
         this.indDisc.position.set(0, 0, d);
-        this.indDisc.scale.setScalar(s.aoe || s.radius);
+        this.indDisc.scale.setScalar((lenC.value = s.aoe || s.radius));
         this.indRect.visible = true;
-        this.indRect.scale.set(0.1, 1, d);
+        this.indRect.scale.set(0.1, 1, (lenR.value = d));
       }
     }
   }
@@ -364,8 +397,10 @@ export class Match {
     this.markAttack(f, dx, dz);
     if (f.team === ME || f.visTo[ME]) {
       this.fx.ring(f.x, f.z, 0.5, 2.2, 0xffe14a, 0.4);
+      this.fx.flash(f.x, 1.3, f.z, 0xffe14a, 28, 0.35);
       this.fx.text(f.x, f.rig.height + 0.9, f.z, f.def.super.name.toUpperCase() + '!', 'super');
     }
+    if (f.isPlayer) this.zoomKick = 1;
     this.perform(f, f.def.super, dx, dz, dist, true);
     return true;
   }
@@ -390,9 +425,8 @@ export class Match {
         const color = f.team === ME ? SHOT_COLOR[s.visual] : ENEMY_COLOR;
         const mesh = this.fx.projectile(s.visual, color);
         mesh.position.set(f.x, 1, f.z);
-        const mark = new THREE.Mesh(this.fx.geos.ring, new THREE.MeshBasicMaterial({
-          color, transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false,
-        }));
+        const mark = new THREE.Mesh(this.fx.geos.disc, zoneMaterial(color, 'warn'));
+        mark.renderOrder = 2;
         mark.position.set(t.x, 0.05, t.z);
         mark.scale.setScalar(s.aoe);
         this.scene.add(mark);
@@ -458,8 +492,9 @@ export class Match {
     if (f.team === ME || f.visTo[ME]) {
       for (let d = 0.5; d < len; d += 0.45) {
         const x = f.x + dx * d, z = f.z + dz * d;
-        this.fx.burst(x, 0.15, z, { n: 5, color: [0x6b4a2a, 0x9a6e3c, 0xd9b46a, 0x3a2a1c], speed: 2.6, up: 4.5, life: 0.55, size: 0.15, spread: s.width * 0.3 });
-        if (Math.round(d / 0.45) % 3 === 0) this.fx.ring(x, z, 0.2, s.width * 0.6, 0x3a2a1c, 0.5, true);
+        this.fx.burst(x, 0.15, z, { n: 5, color: [0x6b4a2a, 0x9a6e3c, 0xd9b46a, 0x3a2a1c], speed: 2.6, up: 4.5, life: 0.55, size: 0.15, spread: s.width * 0.3, hot: false });
+        this.fx.puff(x, 0.25, z, { n: 1, size: 1.0, life: 0.9, alpha: 0.4, rise: 0.9, color: 0xb9925c });
+        if (Math.round(d / 0.45) % 3 === 0) this.fx.scorch(x, z, s.width * 0.75, 5);
       }
     }
     const cd = Math.hypot(f.x - this.camT.x, f.z - this.camT.z);
@@ -558,6 +593,9 @@ export class Match {
     e.cores = 0;
     this.fx.burst(e.x, 0.8, e.z, { n: 26, color: [e.def.color, 0xffffff, TEAMS[e.team].color], speed: 6, up: 5, life: 0.7, size: 0.14 });
     this.fx.ring(e.x, e.z, 0.4, 2.4, TEAMS[e.team].color, 0.45);
+    this.fx.puff(e.x, 0.6, e.z, { n: 6, size: 1.1, life: 0.9, alpha: 0.45, rise: 1.2, speed: 1.4, color: 0xe8e2d8 });
+    this.fx.flash(e.x, 1.2, e.z, TEAMS[e.team].color, 40, 0.4);
+    if (e.isPlayer || (src && src.isPlayer)) this.hitStop = 0.07;
     this.sfx('death', e);
     this.hud.feed(src || null, e);
     if (e.isPlayer) {
@@ -619,6 +657,12 @@ export class Match {
       this.world.resolve(f, R);
       f.moveAmt += ((amt > 0.1 ? amt : 0) - f.moveAmt) * Math.min(1, dt * 12);
       f.phase += dt * f.def.speed * 2.1 * amt;
+      const step = Math.floor(f.phase / Math.PI);
+      if (step !== f.stepN) {
+        f.stepN = step;
+        if (!f.inBush && (f.team === ME || f.visTo[ME]))
+          this.fx.puff(f.x - mx * 0.2, 0.1, f.z - mz * 0.2, { n: 1, size: 0.42, life: 0.5, alpha: 0.26, rise: 0.35, speed: 0.3, color: 0xdcbd8c });
+      }
       if (amt > 0.1) f.moveAng = Math.atan2(mx, mz);
     }
     if (dt > 0) {
@@ -632,7 +676,7 @@ export class Match {
     const inBush = !f.action && this.world.bushAt(f.x, f.z);
     if (inBush !== f.inBush) {
       f.inBush = inBush;
-      if (f.team === ME || f.visTo[ME]) this.fx.burst(f.x, 0.5, f.z, { n: 5, color: [0x3fae4a, 0x57c35c], speed: 2.2, up: 2.5, life: 0.4, size: 0.09 });
+      if (f.team === ME || f.visTo[ME]) this.fx.burst(f.x, 0.5, f.z, { n: 6, color: [0x4d9a26, 0x78bf3a, 0x8fc440], speed: 2.2, up: 2.8, life: 0.45, size: 0.08, hot: false });
     }
   }
 
@@ -654,6 +698,9 @@ export class Match {
         this.fx.ring(f.x, f.z, 0.4, s.aoe, 0xff8a2a, 0.45);
         this.fx.ring(f.x, f.z, 0.2, s.aoe, 0xffd23f, 0.3, true);
         this.fx.burst(f.x, 0.3, f.z, { n: 30, color: [0xff6a1a, 0xffd23f, 0x52424a], speed: 8, up: 5, life: 0.6, size: 0.16 });
+        this.fx.scorch(f.x, f.z, s.aoe * 0.95, 8);
+        this.fx.flash(f.x, 1.4, f.z, 0xff7a2a, 70, 0.5);
+        this.fx.puff(f.x, 0.3, f.z, { n: 8, size: 1.4, life: 1.1, alpha: 0.45, rise: 1.0, speed: 2.4, spread: 0.6, color: 0x8a7868 });
         this.sfx('boom', f);
         const d = Math.hypot(f.x - this.camT.x, f.z - this.camT.z);
         this.shake = Math.max(this.shake, clamp(0.6 - d / 20, 0, 0.6));
@@ -735,12 +782,15 @@ export class Match {
       const u = Math.min(1, l.t / l.dur);
       l.mesh.position.set(l.fx + (l.tx - l.fx) * u, 0.9 + Math.sin(u * Math.PI) * 3.2 - u * 0.7, l.fz + (l.tz - l.fz) * u);
       l.mesh.userData.core.rotation.x += dt * 10;
-      l.mark.material.opacity = 0.35 + u * 0.5;
+      l.mark.material.uniforms.uAlpha.value = 0.55 + u * 0.6;
       if (u < 1) continue;
       this.aoe(l.tx, l.tz, s.aoe, s.dmg, l.owner, 0);
       this.fx.ring(l.tx, l.tz, 0.3, s.aoe, l.color, 0.35);
       this.fx.ring(l.tx, l.tz, 0.2, s.aoe, l.color, 0.25, true);
       this.fx.burst(l.tx, 0.3, l.tz, { n: 18, color: [l.color, 0xffffff], speed: 6, up: 4, life: 0.5, size: 0.12 });
+      this.fx.scorch(l.tx, l.tz, s.aoe * 0.8, 6);
+      this.fx.flash(l.tx, 1.1, l.tz, l.color, 34, 0.4);
+      this.fx.puff(l.tx, 0.3, l.tz, { n: 5, size: 1.0, life: 0.9, alpha: 0.4, rise: 0.9, speed: 1.6, color: l.color });
       this.sfx('boom', { x: l.tx, z: l.tz }, 0.7);
       if (s.zone) this.addZone(l.tx, l.tz, s.zone, l.owner);
       this.fx.remove(l.mesh);
@@ -752,18 +802,13 @@ export class Match {
 
   addZone(x, z, s, owner) {
     const color = owner.team === ME ? ZONE_COLOR[s.visual] : ENEMY_COLOR;
-    const g = new THREE.Group();
-    const fill = new THREE.Mesh(this.fx.geos.disc, new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false,
-    }));
-    const edge = new THREE.Mesh(this.fx.geos.ring, new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false,
-    }));
-    g.add(fill, edge);
+    const mat = zoneMaterial(color, s.visual);
+    const g = new THREE.Mesh(this.fx.geos.disc, mat);
     g.position.set(x, 0.045, z);
     g.scale.setScalar(s.radius);
+    g.renderOrder = 2;
     this.scene.add(g);
-    this.zones.push({ x, z, spec: s, owner, t: 0, tickT: 0, g, fill, edge, color });
+    this.zones.push({ x, z, spec: s, owner, t: 0, tickT: 0, g, mat, color });
   }
 
   updateZones(dt) {
@@ -772,10 +817,11 @@ export class Match {
       z.t += dt;
       const delay = s.delay || 0;
       if (z.t < delay) {
-        z.fill.material.opacity = 0.1 + 0.25 * Math.abs(Math.sin(z.t * 14));
+        z.mat.uniforms.uCharge.value = z.t / delay;
         continue;
       }
-      z.fill.material.opacity = 0.2 + 0.07 * Math.sin(z.t * 6);
+      z.mat.uniforms.uCharge.value = 1;
+      z.mat.uniforms.uAlpha.value = Math.min(1, (delay + s.dur - z.t) / 0.4);
       z.tickT -= dt;
       if (z.tickT <= 0) {
         z.tickT += s.tick;
@@ -799,8 +845,7 @@ export class Match {
       }
       if (z.t >= delay + s.dur) {
         this.scene.remove(z.g);
-        z.fill.material.dispose();
-        z.edge.material.dispose();
+        z.mat.dispose();
         this.zones.splice(i, 1);
       }
     }
@@ -905,14 +950,17 @@ export class Match {
   updateView(dt, rawDt) {
     const p = this.player, w = this.world;
     const anim = { t: this.time, move: 0, phase: 0, kick: 0 };
-    const occupied = [];
+    this.fighters.forEach((f, i) => {
+      const on = f.alive && !f.ghost && (f.team === ME || f.visTo[ME]);
+      if (i < 6) grassFighters.value[i].set(f.x, f.z, on ? 1 : 0);
+    });
     for (const f of this.fighters) {
       const seen = f.alive && (f.team === ME || f.visTo[ME]);
       const root = f.rig.root;
       root.visible = seen;
       f.ring.visible = seen && !f.ghost;
+      f.blob.visible = seen;
       if (seen) {
-        if (f.inBush) occupied.push(f);
         root.position.set(f.x, f.airY, f.z);
         root.rotation.y = f.face;
         const e = 1 - (1 - f.pop) ** 3;
@@ -925,7 +973,11 @@ export class Match {
         const ready = f.super >= 1;
         f.ring.scale.setScalar(ready ? 1.1 + Math.sin(this.time * 9) * 0.08 : 1);
         f.shield.visible = f.shieldT > 0;
-        if (f.shield.visible) f.shield.material.opacity = 0.2 + Math.sin(this.time * 12) * 0.08;
+        if (f.shield.visible) f.shield.material.uniforms.uAlpha.value = Math.min(1, f.shieldT * 3);
+        f.rig.fxU.uFlash.value = f.punch * 0.7;
+        const lift = Math.max(0.35, 1 - f.airY * 0.18);
+        f.blob.position.set(f.x, 0.02, f.z);
+        f.blob.scale.setScalar(lift * (f.def.id === 'brasa' ? 1.25 : 1));
       }
     }
 
@@ -938,7 +990,8 @@ export class Match {
     this.zoom += ((this.state === 'intro' ? 1.25 : 1) - this.zoom) * (1 - Math.exp(-rawDt * 2.5));
     this.shake = Math.max(0, this.shake - rawDt * 2.2);
     const sh = this.shake * this.shake * 1.6;
-    const d = this.camDist * this.zoom;
+    this.zoomKick = Math.max(0, this.zoomKick - rawDt * 3.2);
+    const d = this.camDist * this.zoom * (1 - 0.05 * Math.sin(this.zoomKick * Math.PI));
     this.camera.position.set(
       this.camT.x + (Math.random() - 0.5) * sh,
       d * 0.85 + (Math.random() - 0.5) * sh,
@@ -946,8 +999,13 @@ export class Match {
     );
     this.camera.lookAt(this.camT.x, 0.4, this.camT.z);
     this.camera.updateMatrixWorld();
-    this.sun.position.set(this.camT.x - 10, 24, this.camT.z - 8);
-    this.sun.target.position.set(this.camT.x, 0, this.camT.z);
+    // El sol sigue a la cámara de a pasos de un texel de sombra, para que no titilen los bordes.
+    const st = this.snapT.set(this.camT.x, 0, this.camT.z);
+    const texel = (this.shadowHalf * 2) / this.q.shadow;
+    const rx = st.dot(this.lightRight), ry = st.dot(this.lightUp);
+    st.addScaledVector(this.lightRight, Math.round(rx / texel) * texel - rx).addScaledVector(this.lightUp, Math.round(ry / texel) * texel - ry);
+    this.sun.target.position.copy(st);
+    this.sun.position.copy(st).addScaledVector(this.sunDir, 34);
 
     // etiquetas
     const v = this.tmp;
@@ -959,8 +1017,40 @@ export class Match {
       f.tag.sync(f);
     }
     this.hud.setSuper(p.super);
-    w.update(this.time, dt, occupied);
+    w.update(this.time);
+    this.ambient(dt);
     this.fx.update(dt, this.camera, this.vw, this.vh);
+  }
+
+  // Vida de fondo: motas en el aire, vapor del reactor, brasas y destellos de los núcleos.
+  ambient(dt) {
+    this.ambT += dt;
+    if (this.ambT < 0.13) return;
+    this.ambT = 0;
+    const c = this.camT, fx = this.fx;
+    fx.burst(c.x + (Math.random() - 0.5) * 22, 0.4 + Math.random() * 2.6, c.z + (Math.random() - 0.5) * 16, {
+      n: 1, color: 0xfff2c8, speed: 0.3, up: 0.12, life: 3.2, size: 0.03, grav: -0.04, drag: 0.4,
+    });
+    const r = this.world.reactor;
+    if (Math.random() < 0.3) fx.puff(r.x, 1.8, r.z, { n: 1, size: 0.6, life: 1.6, alpha: 0.22, rise: 0.9, speed: 0.2, color: 0xd6ffb0 });
+    for (const f of this.fighters) {
+      if (!f.alive || f.def.id !== 'brasa' || !(f.team === ME || f.visTo[ME])) continue;
+      fx.burst(f.x, 1.7 + f.airY, f.z, { n: 1, color: [0xff7a12, 0xffc21a], speed: 0.5, up: 1.6, life: 0.7, size: 0.05, grav: -1.5, drag: 1 });
+    }
+    for (const k of this.cores) {
+      if (k.landed && Math.random() < 0.25) fx.burst(k.x, 0.7, k.z, { n: 1, color: 0xc8ff3a, speed: 0.6, up: 1.2, life: 0.55, size: 0.04, grav: 1 });
+    }
+  }
+
+  // Cambio de calidad en plena partida: sombras y cantidad de efectos.
+  setQuality(q) {
+    this.q = q;
+    const sh = this.sun.shadow;
+    sh.mapSize.set(q.shadow, q.shadow);
+    sh.radius = q.shadowRadius;
+    sh.map?.dispose();
+    sh.map = null;
+    this.fx.fxScale = q.fxScale;
   }
 
   dispose() {
@@ -970,7 +1060,7 @@ export class Match {
     }
     for (const p of this.projectiles) this.fx.remove(p.mesh);
     for (const l of this.lobs) { this.fx.remove(l.mesh); l.mark.material.dispose(); }
-    for (const z of this.zones) { z.fill.material.dispose(); z.edge.material.dispose(); }
+    for (const z of this.zones) z.mat.dispose();
     for (const c of this.cores) this.fx.remove(c.mesh);
     this.fx.dispose();
     this.world.dispose();
