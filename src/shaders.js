@@ -168,7 +168,9 @@ export function heroUniforms(rim = 0x000000) {
 }
 export function patchHero(material, u) {
   if (!material.isMeshStandardMaterial) return;
-  patch(material, 'tz-hero', (s) => {
+  const extra = material.userData.shaderExtra; // p. ej. la proyección del arte (projectedMaterial)
+  patch(material, 'tz-hero' + (material.userData.shaderKey || ''), (s) => {
+    extra?.(s);
     s.uniforms.uFlash = u.uFlash;
     s.uniforms.uRim = u.uRim;
     s.fragmentShader = s.fragmentShader
@@ -179,6 +181,27 @@ export function patchHero(material, u) {
         outgoingLight = mix(outgoingLight, vec3(1.7), uFlash);
         #include <opaque_fragment>`);
   });
+}
+
+// --- Arte proyectado ----------------------------------------------------------
+// Pinta un cuerpo 3D con la hoja del personaje: cada vértice trae su coordenada en la vista
+// de frente, de espalda y de perfil (aUvF, aUvB, aUvS) y cuánto pesa cada una (aW), según
+// hacia dónde mira esa parte de la superficie.
+export function projectedMaterial(atlas) {
+  const m = new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 0.8, metalness: 0 });
+  m.userData.shaderKey = '-proj';
+  m.userData.shaderExtra = (s) => {
+    s.uniforms.uAtlas = { value: atlas };
+    s.vertexShader = s.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aUvF;\nattribute vec2 aUvB;\nattribute vec2 aUvS;\nattribute vec3 aW;\nvarying vec2 vUvF;\nvarying vec2 vUvB;\nvarying vec2 vUvS;\nvarying vec3 vW;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvUvF = aUvF;\nvUvB = aUvB;\nvUvS = aUvS;\nvW = aW;');
+    s.fragmentShader = s.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uAtlas;\nvarying vec2 vUvF;\nvarying vec2 vUvB;\nvarying vec2 vUvS;\nvarying vec3 vW;')
+      .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
+        vec3 pj = texture2D(uAtlas, vUvF).rgb * vW.x + texture2D(uAtlas, vUvB).rgb * vW.y + texture2D(uAtlas, vUvS).rgb * vW.z;
+        diffuseColor.rgb *= pj / max(vW.x + vW.y + vW.z, 0.001);`);
+  };
+  return m;
 }
 
 // --- Escudo de reaparición ----------------------------------------------------

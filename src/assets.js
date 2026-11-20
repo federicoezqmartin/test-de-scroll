@@ -29,4 +29,5 @@ export function preloadArt() {
   for (const n of ['arena-n.webp', 'pasto-n.webp']) tex(n, { repeat: true, data: true });
   for (const n of ['piedra-n.webp', 'cajon-n.webp', 'mat-acero-n.webp', 'mat-lava-n.webp']) tex(n, { data: true });
   tex('mat-plumas-n.webp', { repeat: true, data: true });
+  tex('tajo-hoja.webp');
 }

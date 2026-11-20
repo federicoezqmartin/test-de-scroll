@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { tex } from './assets.js';
-import { heroUniforms, patchHero } from './shaders.js';
+import { heroUniforms, patchHero, projectedMaterial } from './shaders.js';
+import TAJO from './tajo-perfil.json';
 
 const PI = Math.PI;
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.05, ...o });
@@ -413,84 +414,138 @@ function zip() {
   return r;
 }
 
-// --- Tajo: zanjero con hacha, mochila y farol --------------------------------
+// --- Tajo: zanjero con hacha ----------------------------------------------------
+// Su cuerpo no está hecho de primitivas: se arma con la silueta medida en su hoja de arte
+// (src/tajo-perfil.json) y se pinta proyectando esa misma hoja de frente, perfil y espalda.
+
+// Cuerpo por rodajas: cada fila es [y, centroX, semiAncho, centroZ, semiFondo], de arriba a abajo.
+// `power` > 2 da secciones más cuadradas (torso con mochila); 2 es una elipse.
+function loft(rows, seg, power) {
+  const n = rows.length, e = 2 / power, pos = [], idx = [];
+  for (const [y, cx, hw, cz, hd] of rows)
+    for (let k = 0; k < seg; k++) {
+      const a = (k / seg) * PI * 2, c = Math.cos(a), sn = Math.sin(a);
+      pos.push(cx + hw * Math.sign(c) * Math.abs(c) ** e, y, cz + hd * Math.sign(sn) * Math.abs(sn) ** e);
+    }
+  const top = pos.length / 3;
+  pos.push(rows[0][1], rows[0][0], rows[0][3], rows[n - 1][1], rows[n - 1][0], rows[n - 1][3]);
+  for (let i = 0; i < n - 1; i++)
+    for (let k = 0; k < seg; k++) {
+      const p0 = i * seg + k, p1 = i * seg + ((k + 1) % seg), q0 = p0 + seg, q1 = p1 + seg;
+      idx.push(p0, p1, q0, p1, q1, q0);
+    }
+  for (let k = 0; k < seg; k++) {
+    const k1 = (k + 1) % seg;
+    idx.push(top, k1, k, top + 1, (n - 1) * seg + k, (n - 1) * seg + k1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+// Coordenadas de cada vértice dentro de la hoja, para las tres vistas, y el peso de cada una.
+function projectSheet(g, d) {
+  const P = g.attributes.position, N = g.attributes.normal, [W, H] = d.hoja;
+  const uvF = [], uvB = [], uvS = [], w = [];
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i) / d.u, y = P.getY(i) / d.u, z = P.getZ(i) / d.u;
+    const v = 1 - (d.bot - y) / H;
+    uvF.push((d.cxF + x) / W, v);
+    uvB.push((d.cxB - x) / W, v);
+    uvS.push((d.czS + z) / W, v);
+    const nx = N.getX(i), nz = N.getZ(i);
+    const f = Math.max(0, nz) ** 3 + 0.002, b = Math.max(0, -nz) ** 3, sd = Math.abs(nx) ** 3, t = f + b + sd;
+    w.push(f / t, b / t, sd / t);
+  }
+  g.setAttribute('aUvF', new THREE.Float32BufferAttribute(uvF, 2));
+  g.setAttribute('aUvB', new THREE.Float32BufferAttribute(uvB, 2));
+  g.setAttribute('aUvS', new THREE.Float32BufferAttribute(uvS, 2));
+  g.setAttribute('aW', new THREE.Float32BufferAttribute(w, 3));
+  return g;
+}
+
 function tajo() {
-  const r = baseRig(0.34, 1.62);
-  const skin = std(0xc98f62, { roughness: 0.6 }), hair = std(0x1c1512, { roughness: 0.95 });
-  const shirt = std(0xffffff, { map: stripesTex(), roughness: 0.85 }), pants = std(0x7a4a22, { roughness: 0.95 });
-  const shoe = std(0xd8cfc0, { roughness: 0.6 }), shoeG = std(0x8d8d92, { roughness: 0.6 });
-  const leather = std(0x7a4a26, { roughness: 0.7 }), tan = std(0xb08a52, { roughness: 0.9 }), wood = std(0x5e3a1e, { roughness: 0.8 });
-  const brass = std(0xc9962e, { metalness: 0.6, roughness: 0.35 });
+  const d = TAJO, U = d.u, K = d.alto / 1.75; // K: escala de los accesorios
+  const yOf = (px) => (d.bot - px) * U, xOf = (px) => (px - d.cxF) * U;
+  const hipY = yOf(560), neckY = yOf(198), shoulderY = yOf(266);
+  const r = baseRig(hipY, d.alto + 0.05);
+  const art = projectedMaterial(tex('tajo-hoja.webp'));
+  const body = (name, parent, pivotX, pivotY, seg, power) => {
+    const m = new THREE.Mesh(projectSheet(loft(d.parts[name], seg, power), d), art);
+    m.position.set(-pivotX, -pivotY, 0); // la malla está en coordenadas del cuerpo entero
+    m.castShadow = true;
+    parent.add(m);
+    return m;
+  };
+  body('body', r.torso, 0, hipY, 28, 2.7);
+  r.head.position.set(0, neckY - hipY, 0);
+  body('head', r.head, 0, neckY, 24, 2.15);
+  for (const [name, grp, px] of [['legL', r.legL, xOf(358)], ['legR', r.legR, xOf(236)]]) {
+    grp.position.x = px;
+    body(name, grp, px, hipY, 20, 2.3);
+  }
+  for (const [name, grp, px] of [['armL', r.armL, xOf(402)], ['armR', r.armR, xOf(190)]]) {
+    grp.position.set(px, shoulderY - hipY, 0);
+    body(name, grp, px, shoulderY, 14, 2);
+  }
+
+  // Farol sobre la cadera derecha y hacha colgada a la espalda (asoma sobre el hombro derecho).
   const steel = std(0xffffff, { map: tex('mat-acero.webp'), metalness: 0.7, roughness: 0.4, ...steelN() });
-  const white = std(0xffffff, { roughness: 0.3 }), dark = std(0x24140f, { roughness: 0.6 }), lamp = glow(0x9dff3a, 2.6);
-
-  for (const [leg, x] of [[r.legL, 0.14], [r.legR, -0.14]]) {
-    leg.position.x = x;
-    part(new THREE.CapsuleGeometry(0.125, 0.1, 4, 10), pants, leg, 0, -0.13, 0);
-    part(new THREE.CylinderGeometry(0.14, 0.14, 0.06, 12), pants, leg, 0, -0.235, 0);
-    part(new RoundedBoxGeometry(0.2, 0.12, 0.36, 2, 0.05), shoe, leg, 0, -0.28, 0.05);
-    part(new RoundedBoxGeometry(0.17, 0.07, 0.2, 1, 0.03), shoeG, leg, 0, -0.235, 0.09);
-  }
-  part(new RoundedBoxGeometry(0.5, 0.44, 0.32, 3, 0.11), shirt, r.torso, 0, 0.22, 0);
-  part(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 12), skin, r.torso, 0, 0.46, 0);
-  for (const s of [1, -1]) part(new THREE.BoxGeometry(0.13, 0.04, 0.1), white, r.torso, s * 0.09, 0.44, 0.1).rotation.set(0.5, 0, -s * 0.5);
-  for (const z of [0.166, -0.166]) part(new THREE.BoxGeometry(0.075, 0.62, 0.02), leather, r.torso, 0, 0.23, z).rotation.z = z > 0 ? 0.72 : -0.72;
-  part(new THREE.BoxGeometry(0.1, 0.1, 0.03), brass, r.torso, 0.03, 0.26, 0.178);
-  part(new RoundedBoxGeometry(0.38, 0.34, 0.18, 2, 0.05), leather, r.torso, 0, 0.26, -0.25);
-  part(new RoundedBoxGeometry(0.22, 0.14, 0.05, 1, 0.02), leather, r.torso, 0, 0.2, -0.35);
-  part(new THREE.CylinderGeometry(0.095, 0.095, 0.44, 12).rotateZ(PI / 2), tan, r.torso, 0, 0.5, -0.25);
+  const wood = std(0x5e3a1e, { roughness: 0.8 }), brass = std(0xc9962e, { metalness: 0.6, roughness: 0.35 });
+  const lamp = glow(0x9dff3a, 1.6);
   const lantern = new THREE.Group();
-  lantern.position.set(0.3, 0.04, -0.12);
+  lantern.position.set(xOf(206), yOf(418) - hipY, -0.22 * K);
+  lantern.scale.setScalar(K);
   r.torso.add(lantern);
-  part(new THREE.SphereGeometry(0.08, 10, 8), lamp, lantern).castShadow = false;
-  part(new THREE.TorusGeometry(0.085, 0.016, 5, 12), steel, lantern);
-  part(new THREE.TorusGeometry(0.085, 0.016, 5, 12).rotateY(PI / 2), steel, lantern);
-  part(new THREE.CylinderGeometry(0.05, 0.07, 0.04, 8), steel, lantern, 0, 0.09, 0);
+  part(new THREE.SphereGeometry(0.062, 12, 10), lamp, lantern, 0, -0.07, 0).castShadow = false;
+  part(new THREE.TorusGeometry(0.066, 0.013, 5, 12), steel, lantern, 0, -0.07, 0);
+  part(new THREE.TorusGeometry(0.066, 0.013, 5, 12).rotateY(PI / 2), steel, lantern, 0, -0.07, 0);
+  part(new THREE.CylinderGeometry(0.04, 0.055, 0.035, 8), steel, lantern, 0, 0, 0);
+  part(new THREE.CylinderGeometry(0.04, 0.03, 0.03, 8), steel, lantern, 0, -0.14, 0);
 
-  r.head.position.set(0, 0.85, 0);
-  part(new THREE.SphereGeometry(0.34, 24, 18), skin, r.head).scale.set(1, 1.02, 0.97);
-  const cap = part(new THREE.SphereGeometry(0.352, 22, 12, 0, PI * 2, 0, 1.12), hair, r.head, 0, 0.02, -0.01);
-  cap.rotation.x = -0.2;
-  for (let i = 0; i < 7; i++) {
-    const a = (i / 6 - 0.5) * 1.7;
-    part(new THREE.SphereGeometry(0.075, 8, 6), hair, r.head, Math.sin(a) * 0.27, 0.24 - Math.abs(a) * 0.05, Math.cos(a) * 0.25);
-  }
-  for (const s of [1, -1]) {
-    part(new THREE.SphereGeometry(0.07, 10, 8), skin, r.head, s * 0.335, -0.03, 0).scale.set(0.5, 1, 0.8);
-    part(new THREE.SphereGeometry(0.018, 6, 6), white, r.head, s * 0.355, -0.08, 0.01);
-    part(new THREE.SphereGeometry(0.045, 10, 8), dark, r.head, s * 0.12, 0.03, 0.3).scale.set(1, 1.25, 0.6);
-    part(new THREE.BoxGeometry(0.11, 0.028, 0.03), hair, r.head, s * 0.12, 0.125, 0.305).rotation.z = -s * 0.12;
-  }
-  part(new THREE.SphereGeometry(0.042, 8, 6), skin, r.head, 0, -0.045, 0.335);
-  part(new RoundedBoxGeometry(0.2, 0.09, 0.03, 1, 0.012), dark, r.head, 0, -0.15, 0.292);
-  part(new RoundedBoxGeometry(0.16, 0.05, 0.03, 1, 0.01), white, r.head, 0, -0.14, 0.3);
+  const axeHead = () => {
+    const g = new THREE.Group();
+    part(new THREE.BoxGeometry(0.05, 0.1, 0.1), steel, g);
+    const blade = part(new THREE.CylinderGeometry(0.18, 0.18, 0.035, 16, 1, false, -0.95, 1.9).rotateZ(PI / 2), steel, g, 0, 0, 0.05);
+    blade.scale.set(1, 1.3, 1.15);
+    part(new THREE.CylinderGeometry(0.045, 0.045, 0.06, 8), brass, g, 0, -0.09, 0);
+    return g;
+  };
+  const stowed = new THREE.Group();
+  stowed.position.set(xOf(196), yOf(175) - hipY, -0.26 * K);
+  stowed.rotation.set(0.1, -PI / 2, -0.5);
+  stowed.scale.setScalar(K);
+  r.torso.add(stowed);
+  part(new THREE.CylinderGeometry(0.026, 0.03, 0.5, 8), wood, stowed, 0, -0.26, 0);
+  stowed.add(axeHead());
 
-  for (const [arm, x] of [[r.armL, 0.32], [r.armR, -0.32]]) {
-    arm.position.set(x, 0.38, 0);
-    part(new THREE.CylinderGeometry(0.095, 0.105, 0.15, 12), shirt, arm, 0, -0.04, 0);
-    part(new THREE.CapsuleGeometry(0.062, 0.18, 4, 8), skin, arm, 0, -0.21, 0);
-    part(new THREE.SphereGeometry(0.075, 10, 8), skin, arm, 0, -0.36, 0);
-  }
-  part(new THREE.TorusGeometry(0.07, 0.014, 5, 12).rotateX(PI / 2), steel, r.armR, 0, -0.29, 0);
+  // Hacha en la mano: solo aparece durante el golpe.
   const axe = new THREE.Group();
-  axe.position.set(0, -0.36, 0.02);
-  axe.rotation.x = 1.15;
+  axe.position.set(xOf(116) - xOf(190), yOf(560) - shoulderY, 0.03);
   r.armR.add(axe);
-  part(new THREE.CylinderGeometry(0.03, 0.035, 1.0, 8), wood, axe, 0, 0.3, 0);
-  part(new THREE.BoxGeometry(0.06, 0.1, 0.12), steel, axe, 0, 0.74, 0);
-  const head = part(new THREE.CylinderGeometry(0.24, 0.24, 0.05, 14, 1, false, -0.9, 1.8).rotateZ(PI / 2), steel, axe, 0, 0.74, 0.06);
-  head.scale.set(1, 1.25, 1.2);
-  part(new THREE.BoxGeometry(0.05, 0.08, 0.12), steel, axe, 0, 0.74, -0.1);
+  axe.rotation.x = PI / 2; // el mango sale hacia adelante de la mano
+  axe.scale.setScalar(K);
+  part(new THREE.CylinderGeometry(0.026, 0.03, 0.8, 8), wood, axe, 0, 0.3, 0);
+  const hand = axeHead();
+  hand.position.y = 0.66;
+  axe.add(hand);
+  axe.visible = false;
 
-  r.armSwing = 0.8;
+  r.armSwing = 0.35;
   r.kickArm = 0;
   r.custom = (s) => {
-    // El hacha descansa apuntando arriba y adelante; al atacar baja de golpe.
-    r.armR.rotation.x = -0.35 + Math.sin(s.phase) * 0.25 * s.move - Math.sin(s.kick * PI) * 1.5;
-    axe.rotation.x = 1.15 + s.kick * 0.9;
-    lantern.rotation.z = Math.sin(s.phase) * 0.3 * s.move + Math.sin(s.t * 2 + r.seed) * 0.05;
-    lamp.emissiveIntensity = 1.3 + Math.sin(s.t * 4 + r.seed) * 0.25;
-    r.torso.rotation.x += s.move * 0.08;
+    // Piernas y brazos son piezas rígidas y largas: se mueven menos que las de los muñecos.
+    r.legL.rotation.x *= 0.55;
+    r.legR.rotation.x *= 0.55;
+    // Hachazo: el brazo arranca en alto con el hacha sobre la cabeza y baja de golpe.
+    axe.visible = s.kick > 0.03;
+    stowed.visible = !axe.visible;
+    r.armR.rotation.x = Math.sin(s.phase) * 0.3 * s.move - 2.5 * s.kick ** 0.8;
+    lantern.rotation.z = Math.sin(s.phase) * 0.25 * s.move + Math.sin(s.t * 2 + r.seed) * 0.05;
+    lamp.emissiveIntensity = 1.1 + Math.sin(s.t * 4 + r.seed) * 0.2;
+    r.torso.rotation.x += s.move * 0.05;
   };
   return r;
 }

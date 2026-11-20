@@ -134,7 +134,7 @@ class Showcase {
     if (!this.rig) return;
     const e = 1 - (1 - this.pop) ** 3;
     this.rig.root.scale.setScalar(0.4 + 0.6 * e);
-    this.spin.rotation.y = 0.35 + Math.sin(this.t * 0.6) * 0.55 + (1 - e) * 3;
+    this.spin.rotation.y = this.angle ?? 0.35 + Math.sin(this.t * 0.6) * 0.55 + (1 - e) * 3; // angle: giro fijo, para pruebas
     const walk = (Math.sin(this.t * 0.45) + 1) / 2 > 0.72 ? 1 : 0;
     this.move = (this.move || 0) + (walk - (this.move || 0)) * Math.min(1, dt * 6);
     animateRig(this.rig, { t: this.t, move: this.move, phase: this.t * 10, kick: this.kick });
@@ -328,4 +328,4 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 // Gancho de depuración para pruebas automáticas.
-window.__trifulca = { get match() { return match; }, get state() { return state; }, get quality() { return qualityName; }, gfx, input, startMatch, toMenu, setQuality };
+window.__trifulca = { get match() { return match; }, get state() { return state; }, get quality() { return qualityName; }, gfx, showcase, input, startMatch, toMenu, setQuality };

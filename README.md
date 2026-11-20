@@ -81,7 +81,10 @@ El arte se generó con IA a partir de prompts y vive en dos carpetas:
 
 `arte/procesar_arte.py` es el script que convierte los originales en los archivos de `public/arte/` (necesita Python con Pillow y numpy, y los PNG originales en la carpeta que indica la variable `U`).
 
-Los personajes dentro de la partida son modelos 3D hechos por código que imitan las hojas; no son las imágenes. Zip todavía no tiene hoja de arte y usa una foto de su modelo como retrato.
+Dentro de la partida hay dos tipos de personaje:
+
+- **Tajo** se arma a partir de su hoja de arte. `arte/perfilar_tajo.py` mide la silueta de frente y de perfil y la guarda en `src/tajo-perfil.json`; con eso `models.js` levanta el cuerpo por rodajas (cabeza, torso con mochila, brazos y piernas) y lo pinta proyectando la misma hoja (`public/arte/tajo-hoja.webp`) de frente, perfil y espalda. Por eso se ve como el dibujo desde cualquier ángulo.
+- **El resto** son modelos hechos con formas simples que imitan sus hojas, con materiales recortados de ellas. Zip todavía no tiene hoja de arte y usa una foto de su modelo como retrato.
 
 El sonido se sintetiza por código.
 
