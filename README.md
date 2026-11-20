@@ -1,2 +1,128 @@
 # test-de-scroll
-pruebas pizarra
+
+Repo de pruebas con IA. Ahora mismo la página es un juego: **Tu Zanja 3D**.
+
+## Tu Zanja 3D
+
+Arena 3 contra 3 con vista cenital, en 3D real (three.js), que corre en el navegador. Vos manejás un personaje; los otros cinco son bots.
+
+**Objetivo:** el reactor del centro va soltando núcleos. El equipo que junte 10 y los aguante 15 segundos gana. Si te eliminan, se te caen todos los que llevabas.
+
+**Mecánicas:** tres cargas de munición que se recargan solas, un súper que se carga haciendo daño, pasto alto para esconderse, muros que frenan los disparos, cajones que frenan los disparos hasta que se rompen, agua que frena el paso pero no los disparos, y vida que se regenera si dejás de pelear unos segundos.
+
+**Personajes:**
+
+| Personaje | Rol | Ataque | Súper |
+|---|---|---|---|
+| Tuerca (robot) | Tiradora | Ráfaga de 3 remaches | Esfera de plasma que atraviesa |
+| Brasa (gólem de lava) | Tanque | Abanico de ascuas | Salto que aplasta la zona |
+| Nox (lechuza) | Francotiradora | Dardo de largo alcance | Lluvia de estrellas en un área |
+| Pompa (rana) | Lanzadora | Frasco que pasa sobre los muros | Charco tóxico |
+| Zip (conejo ninja) | Asesino | Dos tajos cuerpo a cuerpo | Embestida instantánea |
+| Tajo (zanjero con hacha) | Embestidor | Hachazo: se lanza hacia adelante cortando | Zanja en línea que daña, empuja y lo cura |
+
+**Controles**
+
+- Teclado y mouse: `WASD` o flechas para moverte, mouse para apuntar, clic para disparar, `Espacio` o clic derecho para el súper (mantené para ver a dónde va), `Esc` para pausar.
+- Celular: palanca izquierda para moverte; el botón rojo dispara solo al rival más cercano si lo tocás, o apunta si lo arrastrás. El botón de súper funciona igual.
+
+## Interfaz de partida
+
+- **Marcador:** diez casilleros por equipo que se van llenando, la meta y el reloj de la partida.
+- **Tarjeta del jugador:** retrato, vida en números, munición y núcleos que llevás.
+- **Paneles de equipo:** aliados y rivales con retrato, vida, núcleos y la cuenta para reaparecer. De un rival escondido se muestra lo último que se le vio.
+- **Minimapa:** mapa, núcleos en el piso, aliados y los rivales que estén a la vista. Se actualiza cuando se rompe un cajón o se corta pasto.
+- **Avisos:** bajas con retratos, rachas ("¡Doble baja!"), un arco rojo que marca de dónde vino el golpe, quién te eliminó y la mira del mouse.
+- **Pausa:** tabla en vivo con bajas, daño y núcleos de los seis.
+
+En celular la tarjeta, los paneles y el minimapa suben para dejar libres los pulgares.
+
+## Configuración
+
+Se abre desde el menú, la pausa o el engranaje del HUD, y se guarda en el navegador. Todo está definido en `src/settings.js` (valores por defecto y la lista de controles de la pantalla).
+
+| Sección | Opciones |
+|---|---|
+| Juego | Tu nombre · dificultad de los bots (Fácil, Normal, Difícil) |
+| Gráficos | Calidad (Auto, Baja, Media, Alta) · resplandor · desenfoque de maqueta · color de cine · temblor de cámara · distancia de cámara · sangre · cuadros por segundo |
+| Sonido | Volumen · silenciar |
+| Interfaz | Tamaño · minimapa · paneles de equipo · nombres · números de daño · aviso de dónde viene el daño · colores de equipo (azul y rojo, o azul y naranja para daltonismo) |
+| Controles táctiles | Modo zurdo · tamaño de los botones |
+
+La dificultad, el nombre y el color de equipo en el 3D se aplican al empezar la próxima partida; el resto cambia al instante.
+
+## Gráficos
+
+- **Luz y sombras:** sol bajo con sombras largas y suaves, luz de relleno, reflejos de entorno, sombra de contacto bajo personajes y alrededor de muros y cajones.
+- **Materiales:** relieve (normal maps) generado a partir de las texturas de arena, piedra, madera, acero, lava y plumas.
+- **Shaders propios** (`src/shaders.js`): agua de las piletas con espuma y red de luz, mar con oleaje hacia la costa, pasto que se mueve con el viento y se abre al paso de los luchadores, borde de luz del color del equipo y destello de daño en los personajes, escudo, zonas de efecto e indicador de puntería.
+- **Posprocesado** (`src/gfx.js`): oclusión ambiental, bloom, desenfoque leve de maqueta arriba y abajo, corrección de color, viñeta y grano.
+- **Efectos:** humo y polvo, marcas de quemado, luces de destello en explosiones, polvo al caminar, motas en el aire, vapor del reactor.
+
+Hay tres niveles, que se eligen en Configuración:
+
+| Nivel | Qué incluye |
+|---|---|
+| Alta | Todo: oclusión ambiental, bloom, desenfoque de maqueta, antialias 4x, sombras de 4096 |
+| Media | Bloom, corrección de color, antialias liviano, sombras de 2048 |
+| Baja | Sin posprocesado, sombras de 1024, menos partículas |
+
+En "Auto" arranca en Alta (Media en pantallas táctiles) y, si durante la partida no llega a unos 27 cuadros por segundo, baja sola un nivel y avisa. Para forzar uno por una visita: `?q=alta`, `?q=media` o `?q=baja`.
+
+## Físicas y realismo
+
+- **Escombros con física** (`src/physics.js`): tablas, esquirlas, piezas y casquillos caen con gravedad, rebotan contra el piso y los muros, quedan apoyados y, si caen al agua, salpican.
+- **Cajones que se rompen:** aguantan 1500 de daño; los disparos les sacan astillas y las explosiones los parten. Al romperse abren el paso (los bots lo aprovechan).
+- **Pasto que se corta:** el salto de Brasa, el charco de Pompa y la zanja de Tajo lo cortan, y ahí ya no se puede esconder nadie. Las explosiones además lo aplastan un instante.
+- **Golpes:** cada personaje pierde lo que le corresponde: sangre que mancha el piso (Nox, Pompa, Zip, Tajo), aceite y chispas (Tuerca) o brasas y cascotes (Brasa). El cuerpo se inclina hacia donde lo empujan, y con poca vida gotea o larga humo.
+- **Muertes:** los de carne caen hacia donde vino el golpe y dejan un charco; el robot y el gólem se desarman en piezas.
+- **Movimiento y armas:** inercia al arrancar y frenar, retroceso al disparar y casquillos en los remaches de Tuerca.
+- **Sangre** se apaga en Configuración. Apagada, los golpes sueltan chispas blancas y no quedan manchas.
+
+## Correrlo
+
+```bash
+npm install
+npm run dev        # desarrollo
+npm run build      # genera dist/
+npm run preview    # sirve dist/
+```
+
+## Dónde está cada cosa
+
+```
+index.html        pantallas (menú, HUD, pausa, resultados)
+src/main.js       arranque, vitrina 3D del menú, ciclo menú → partida → resultados
+src/data.js       reglas, personajes y mapa (todo lo ajustable está acá)
+src/match.js      partida: combate, núcleos, reglas, cámara
+src/ai.js         bots: búsqueda de camino y decisiones
+src/world.js      arena: colisiones y escenario
+src/physics.js    escombros con física (gravedad, rebotes, agua)
+src/shaders.js    shaders propios (agua, mar, pasto, personajes, escudo, zonas)
+src/gfx.js        niveles de calidad y posprocesado
+src/models.js     personajes 3D armados con primitivas, con materiales del arte
+src/assets.js     carga de las texturas de public/arte
+src/fx.js         partículas, proyectiles, textos flotantes
+src/audio.js      sonido sintetizado (no hay archivos de audio)
+src/input.js      teclado, mouse y táctil
+src/ui.js         interfaz en DOM: menú, HUD, pausa, configuración, resultados
+src/settings.js   configuración: valores, guardado y lista de controles
+```
+
+## Arte
+
+El arte se generó con IA a partir de prompts y vive en dos carpetas:
+
+- `public/arte/`: lo que usa el juego (alrededor de 1 MB). Texturas de arena, piedra, cajón y pasto; el núcleo y el logo recortados; las fichas de los personajes (`ficha-*.webp`) que se ven en el menú; los materiales `mat-*.webp` recortados de las hojas de personaje; y los mapas de relieve `*-n.webp`.
+- `arte/referencias/`: copias reducidas de las imágenes originales, para seguir ajustando los modelos.
+
+`arte/procesar_arte.py` es el script que convierte los originales en los archivos de `public/arte/` (necesita Python con Pillow y numpy, y los PNG originales en la carpeta que indica la variable `U`).
+
+Dentro de la partida hay dos tipos de personaje:
+
+- **Tajo** se arma a partir de su hoja de arte. `arte/perfilar_tajo.py` mide la silueta de frente y de perfil y la guarda en `src/tajo-perfil.json`; con eso `models.js` levanta el cuerpo por rodajas (cabeza, torso con mochila, brazos y piernas) y lo pinta proyectando la misma hoja (`public/arte/tajo-hoja.webp`) de frente, perfil y espalda. Por eso se ve como el dibujo desde cualquier ángulo.
+- **El resto** son modelos hechos con formas simples que imitan sus hojas, con materiales recortados de ellas. Zip todavía no tiene hoja de arte y usa una foto de su modelo como retrato.
+
+El sonido se sintetiza por código.
+
+`INSTRUCCIONES_DEL_PROYECTO.md` es de la landing de scroll anterior y quedó como estaba.
