@@ -43,6 +43,7 @@ const store = {
 const urlQ = new URLSearchParams(location.search).get('q');
 const manualQ = QUALITY[urlQ] ? urlQ : QUALITY[store.get('tuzanja-calidad')] ? store.get('tuzanja-calidad') : null;
 let autoQuality = !manualQ;
+let gore = store.get('tuzanja-sangre') !== '0'; // sangre y manchas; se apaga desde el menú o la pausa
 let fpsFrames = 0, fpsTime = 0, fpsWarm = 0; // medición de cuadros por segundo (ver watchFps)
 let qualityName = manualQ || (QUALITY[store.get('tuzanja-calidad-auto')] ? store.get('tuzanja-calidad-auto') : coarse ? 'media' : 'alta');
 
@@ -202,7 +203,7 @@ function startMatch(heroId) {
   ui.resetHud();
   lastHero = heroId;
   match = new Match({
-    heroId, input, hud: ui, layer: ui.layer, env: envMap, quality: gfx.q,
+    heroId, input, hud: ui, layer: ui.layer, env: envMap, quality: gfx.q, gore,
     onEnd: (res) => {
       state = 'results';
       input.enabled = false;
@@ -267,6 +268,17 @@ on('quit', toMenu);
 on('btn-pause', togglePause);
 on('btn-quality', cycleQuality);
 on('btn-quality-2', cycleQuality);
+const toggleGore = () => {
+  gore = !gore;
+  store.set('tuzanja-sangre', gore ? '1' : '0');
+  if (match) match.gore = gore;
+  ui.setGore(gore);
+  audio.unlock();
+  audio.play('ui');
+};
+on('btn-gore', toggleGore);
+on('btn-gore-2', toggleGore);
+ui.setGore(gore);
 const muteBtn = document.getElementById('btn-mute');
 muteBtn.classList.toggle('off', audio.muted);
 muteBtn.addEventListener('click', () => {

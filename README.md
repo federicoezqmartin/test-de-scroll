@@ -8,7 +8,7 @@ Arena 3 contra 3 con vista cenital, en 3D real (three.js), que corre en el naveg
 
 **Objetivo:** el reactor del centro va soltando núcleos. El equipo que junte 10 y los aguante 15 segundos gana. Si te eliminan, se te caen todos los que llevabas.
 
-**Mecánicas:** tres cargas de munición que se recargan solas, un súper que se carga haciendo daño, pasto alto para esconderse, muros que frenan los disparos, agua que frena el paso pero no los disparos, y vida que se regenera si dejás de pelear unos segundos.
+**Mecánicas:** tres cargas de munición que se recargan solas, un súper que se carga haciendo daño, pasto alto para esconderse, muros que frenan los disparos, cajones que frenan los disparos hasta que se rompen, agua que frena el paso pero no los disparos, y vida que se regenera si dejás de pelear unos segundos.
 
 **Personajes:**
 
@@ -44,6 +44,16 @@ Hay tres niveles, que se cambian desde el menú o la pausa:
 
 Arranca en Alta (Media en pantallas táctiles). Si durante la partida no llega a unos 27 cuadros por segundo, baja sola un nivel y avisa. Elegir un nivel a mano apaga ese ajuste. Para forzar uno desde la dirección: `?q=alta`, `?q=media` o `?q=baja`.
 
+## Físicas y realismo
+
+- **Escombros con física** (`src/physics.js`): tablas, esquirlas, piezas y casquillos caen con gravedad, rebotan contra el piso y los muros, quedan apoyados y, si caen al agua, salpican.
+- **Cajones que se rompen:** aguantan 1500 de daño; los disparos les sacan astillas y las explosiones los parten. Al romperse abren el paso (los bots lo aprovechan).
+- **Pasto que se corta:** el salto de Brasa, el charco de Pompa y la zanja de Tajo lo cortan, y ahí ya no se puede esconder nadie. Las explosiones además lo aplastan un instante.
+- **Golpes:** cada personaje pierde lo que le corresponde: sangre que mancha el piso (Nox, Pompa, Zip, Tajo), aceite y chispas (Tuerca) o brasas y cascotes (Brasa). El cuerpo se inclina hacia donde lo empujan, y con poca vida gotea o larga humo.
+- **Muertes:** los de carne caen hacia donde vino el golpe y dejan un charco; el robot y el gólem se desarman en piezas.
+- **Movimiento y armas:** inercia al arrancar y frenar, retroceso al disparar y casquillos en los remaches de Tuerca.
+- **Sangre: Sí / No** desde el menú o la pausa. Apagada, los golpes sueltan chispas blancas y no quedan manchas.
+
 ## Correrlo
 
 ```bash
@@ -62,6 +72,7 @@ src/data.js       reglas, personajes y mapa (todo lo ajustable está acá)
 src/match.js      partida: combate, núcleos, reglas, cámara
 src/ai.js         bots: búsqueda de camino y decisiones
 src/world.js      arena: colisiones y escenario
+src/physics.js    escombros con física (gravedad, rebotes, agua)
 src/shaders.js    shaders propios (agua, mar, pasto, personajes, escudo, zonas)
 src/gfx.js        niveles de calidad y posprocesado
 src/models.js     personajes 3D armados con primitivas, con materiales del arte

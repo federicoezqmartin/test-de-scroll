@@ -30,10 +30,13 @@ export const BOT_NAMES = ['Rulo', 'Mecha', 'Pipa', 'Tano', 'Fideo', 'Lola', 'Bri
   - zone  : zona de daño por tiempo en un punto.
   - line  : golpe en línea recta, instantáneo; puede curar una parte del daño hecho.
   `art` es el recorte del arte original (public/arte) que se usa de retrato.
+  `gore`: qué pierde al recibir daño (blood: sangre, oil: aceite y chispas, lava: brasas)
+  y cómo muere (fall: el cuerpo cae; break: se desarma en piezas).
 */
 export const HEROES = [
   {
     id: 'tuerca',
+    gore: { blood: 'oil', death: 'break' },
     art: 'ficha-tuerca.webp',
     name: 'Tuerca',
     role: 'Tiradora',
@@ -57,6 +60,7 @@ export const HEROES = [
   },
   {
     id: 'brasa',
+    gore: { blood: 'lava', death: 'break' },
     art: 'ficha-brasa.webp',
     name: 'Brasa',
     role: 'Tanque',
@@ -79,6 +83,7 @@ export const HEROES = [
   },
   {
     id: 'nox',
+    gore: { blood: 'blood', death: 'fall' },
     art: 'ficha-nox.webp',
     name: 'Nox',
     role: 'Francotiradora',
@@ -101,6 +106,7 @@ export const HEROES = [
   },
   {
     id: 'pompa',
+    gore: { blood: 'blood', death: 'fall' },
     art: 'ficha-pompa.webp',
     name: 'Pompa',
     role: 'Lanzadora',
@@ -124,6 +130,7 @@ export const HEROES = [
   },
   {
     id: 'zip',
+    gore: { blood: 'blood', death: 'fall' },
     name: 'Zip',
     role: 'Asesino',
     blurb: 'Conejo ninja, el más rápido de la arena. Entra, corta dos veces y ya no está.',
@@ -145,6 +152,7 @@ export const HEROES = [
   },
   {
     id: 'tajo',
+    gore: { blood: 'blood', death: 'fall' },
     art: 'ficha-tajo.webp',
     name: 'Tajo',
     role: 'Embestidor',

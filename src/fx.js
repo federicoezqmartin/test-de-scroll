@@ -2,11 +2,12 @@
 // proyectiles y textos flotantes.
 import * as THREE from 'three';
 import { tex } from './assets.js';
-import { puffMaterial } from './shaders.js';
+import { puffMaterial, instancedAlpha } from './shaders.js';
 
 const MAX = 700;
 const PUFF_MAX = 140;
 const SCORCH_MAX = 8;
+const STAIN_MAX = 80;
 const tmpColor = new THREE.Color();
 const v3 = new THREE.Vector3();
 
@@ -44,6 +45,28 @@ function scorchTexture() {
   }
   return new THREE.CanvasTexture(c);
 }
+
+// Mancha de líquido: un charco central con lóbulos y gotas alrededor.
+function stainTexture() {
+  const S = 128, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.filter = 'blur(1.5px)';
+  const blob = (x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); };
+  blob(S / 2, S / 2, S * 0.22);
+  for (let i = 0; i < 9; i++) {
+    const a = Math.random() * 6.28, d = S * (0.12 + Math.random() * 0.14);
+    blob(S / 2 + Math.cos(a) * d, S / 2 + Math.sin(a) * d, S * (0.07 + Math.random() * 0.09));
+  }
+  for (let i = 0; i < 14; i++) {
+    const a = Math.random() * 6.28, d = S * (0.3 + Math.random() * 0.17);
+    blob(S / 2 + Math.cos(a) * d, S / 2 + Math.sin(a) * d, 1.5 + Math.random() * 4);
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+export const STAIN = { blood: 0x5e0505, oil: 0x08080b, slime: 0x2f6a12 };
 
 export class Fx {
   // q: nivel de calidad (boost de brillo para el bloom, cantidad de partículas y de luces).
@@ -107,6 +130,25 @@ export class Fx {
       scene.add(m);
       this.scorches.push({ m, t: 0, dur: 0 });
     }
+
+    // Manchas de líquido en el piso (sangre, aceite): quedan un rato y después se borran.
+    this.stainGeo = keep(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
+    this.stainAlpha = new THREE.InstancedBufferAttribute(new Float32Array(STAIN_MAX), 1);
+    this.stainAlpha.setUsage(THREE.DynamicDrawUsage);
+    this.stainGeo.setAttribute('aAlpha', this.stainAlpha);
+    this.stainMesh = new THREE.InstancedMesh(this.stainGeo, keep(instancedAlpha(new THREE.MeshStandardMaterial({
+      map: keep(stainTexture()), transparent: true, depthWrite: false, roughness: 0.22, metalness: 0,
+      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+    }))), STAIN_MAX);
+    this.stainMesh.frustumCulled = false;
+    this.stainMesh.receiveShadow = true;
+    this.stainMesh.renderOrder = 1;
+    this.stainMesh.setColorAt(0, tmpColor.set(0xffffff));
+    scene.add(this.stainMesh);
+    this.stains = [];
+    this.stainNext = 0;
+    this.stainDummy = new THREE.Object3D();
+    this.canStain = () => true; // la partida lo reemplaza: no se mancha el agua ni arriba de un muro
 
     // Luces de destello reutilizables (explosiones, súper).
     this.lights = [];
@@ -191,7 +233,7 @@ export class Fx {
         vx: Math.cos(a) * sp + (o.vx ?? 0), vy: up, vz: Math.sin(a) * sp + (o.vz ?? 0),
         life: life * (0.6 + Math.random() * 0.7), t: 0,
         size: size * (0.6 + Math.random() * 0.8), grav: o.grav ?? 9, drag: o.drag ?? 2.5,
-        color: colors[Math.floor(Math.random() * colors.length)], k,
+        color: colors[Math.floor(Math.random() * colors.length)], k, stain: o.stain || null,
       });
     }
   }
@@ -209,6 +251,24 @@ export class Fx {
         alpha: o.alpha ?? 0.5, color: o.color ?? 0xd9c7a0,
       });
     }
+  }
+
+  // Mancha en el piso. grow > 0 la hace crecer de a poco, como un charco.
+  stain(kind, x, z, size, o = {}) {
+    if (!this.canStain(x, z)) return;
+    const i = this.stainNext;
+    this.stainNext = (i + 1) % STAIN_MAX;
+    this.stains[i] = {
+      x, z, rot: Math.random() * 6.28, size, s0: o.grow ? size * 0.25 : size * 0.7, grow: o.grow ?? 0.12,
+      t: 0, life: o.life ?? 18, alpha: o.alpha ?? 0.9, color: STAIN[kind] ?? STAIN.blood,
+    };
+  }
+
+  // Salpicadura de agua: columna de gotas y onda.
+  splash(x, z, y = -0.14, size = 0.5) {
+    this.burst(x, y + 0.1, z, { n: Math.round(6 + size * 10), color: [0xd8f6ff, 0x9fe6f5, 0xffffff], speed: 1.6 + size, up: 4 + size * 3, life: 0.55, size: 0.07, hot: false });
+    this.ring(x, z, 0.1, 0.5 + size, 0xd8f6ff, 0.5);
+    this.rings[this.rings.length - 1].m.position.y = y + 0.03;
   }
 
   scorch(x, z, radius, dur = 7) {
@@ -276,7 +336,15 @@ export class Fx {
       p.vx *= k; p.vz *= k;
       p.vy -= p.grav * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-      if (p.y < 0.04) { p.y = 0.04; p.vy *= -0.35; }
+      if (p.y < 0.04) {
+        if (p.stain) {
+          // gota de líquido: al tocar el piso deja su marca y desaparece
+          if (Math.random() < 0.55) this.stain(p.stain, p.x, p.z, 0.16 + Math.random() * 0.3, { life: 14 });
+          this.p[i] = this.p[this.p.length - 1]; this.p.pop();
+          continue;
+        }
+        p.y = 0.04; p.vy *= -0.35;
+      }
     }
     for (const p of this.p) {
       const s = p.size * (1 - (p.t / p.life) ** 2);
@@ -318,6 +386,30 @@ export class Fx {
     this.puffMesh.instanceMatrix.needsUpdate = true;
     this.puffAlpha.needsUpdate = true;
     if (this.puffMesh.instanceColor) this.puffMesh.instanceColor.needsUpdate = true;
+
+    // manchas
+    const sd = this.stainDummy;
+    let sn = 0;
+    for (let i = 0; i < STAIN_MAX; i++) {
+      const st = this.stains[i];
+      if (!st) continue;
+      st.t += dt;
+      if (st.t >= st.life) { this.stains[i] = null; continue; }
+      const grow = Math.min(1, st.t / Math.max(0.01, st.grow));
+      const size = st.s0 + (st.size - st.s0) * (1 - (1 - grow) ** 2);
+      sd.position.set(st.x, 0.014 + i * 0.00004, st.z);
+      sd.rotation.set(0, st.rot, 0);
+      sd.scale.set(size, 1, size);
+      sd.updateMatrix();
+      this.stainMesh.setMatrixAt(sn, sd.matrix);
+      this.stainMesh.setColorAt(sn, tmpColor.set(st.color));
+      this.stainAlpha.array[sn] = st.alpha * Math.min(1, (st.life - st.t) / (st.life * 0.3));
+      sn++;
+    }
+    this.stainMesh.count = sn;
+    this.stainMesh.instanceMatrix.needsUpdate = true;
+    this.stainAlpha.needsUpdate = true;
+    if (this.stainMesh.instanceColor) this.stainMesh.instanceColor.needsUpdate = true;
 
     // marcas en el piso
     for (const s of this.scorches) {
@@ -373,6 +465,8 @@ export class Fx {
   dispose() {
     this.scene.remove(this.pMesh);
     this.scene.remove(this.puffMesh);
+    this.scene.remove(this.stainMesh);
+    this.stainMesh.dispose();
     for (const s of this.scorches) this.scene.remove(s.m);
     for (const f of this.lights) this.scene.remove(f.l);
     this.puffMesh.dispose();

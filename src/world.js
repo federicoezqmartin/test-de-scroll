@@ -58,17 +58,57 @@ export class World {
 
     // Costo extra para caminar pegado a obstáculos (los bots doblan más abierto).
     this.cost = new Float32Array(this.W * this.H);
-    for (let r = 0; r < this.H; r++)
-      for (let c = 0; c < this.W; c++) {
-        let near = 0;
-        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (this.blocksMove(c + dc, r + dr)) near++;
-        this.cost[r * this.W + c] = near ? 0.35 : 0;
-      }
+    this.updateCost(0, 0, this.W - 1, this.H - 1);
 
     this.group = new THREE.Group();
     scene.add(this.group);
     this.disposables = [];
     this.build();
+  }
+
+  updateCost(c0, r0, c1, r1) {
+    for (let r = Math.max(0, r0); r <= Math.min(this.H - 1, r1); r++)
+      for (let c = Math.max(0, c0); c <= Math.min(this.W - 1, c1); c++) {
+        let near = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (this.blocksMove(c + dc, r + dr)) near++;
+        this.cost[r * this.W + c] = near ? 0.35 : 0;
+      }
+  }
+
+  // --- cosas que se rompen ----------------------------------------------------
+  // Daña el cajón de una baldosa. Devuelve 'hit', 'broken' o null si ahí no hay cajón.
+  damageCrate(c, r, amount) {
+    const k = this.crates.get(r * this.W + c);
+    if (!k || this.type(c, r) !== T.CRATE) return null;
+    k.hp -= amount;
+    if (k.hp > 0) return 'hit';
+    this.grid[r * this.W + c] = T.FLOOR;
+    const hide = this.hideMatrix;
+    this.crateMesh.setMatrixAt(k.n, hide);
+    this.crateMesh.instanceMatrix.needsUpdate = true;
+    this.aoMesh.setMatrixAt(k.ao, hide);
+    this.aoMesh.instanceMatrix.needsUpdate = true;
+    this.updateCost(c - 1, r - 1, c + 1, r + 1);
+    return 'broken';
+  }
+
+  // Corta el pasto alto de una baldosa: deja de esconder. Devuelve true si había.
+  cutBush(c, r) {
+    const start = this.bushStart.get(r * this.W + c);
+    if (start === undefined || this.type(c, r) !== T.BUSH) return false;
+    this.grid[r * this.W + c] = T.FLOOR;
+    for (let k = 0; k < this.bushPer; k++) this.bushMesh.setMatrixAt(start + k, this.hideMatrix);
+    this.bushMesh.instanceMatrix.needsUpdate = true;
+    return true;
+  }
+
+  // Baldosas (columna, fila) cuyo centro cae dentro de un círculo.
+  tilesIn(x, z, radius) {
+    const out = [];
+    for (let r = this.row(z - radius); r <= this.row(z + radius); r++)
+      for (let c = this.col(x - radius); c <= this.col(x + radius); c++)
+        if (Math.hypot(this.cx(c) - x, this.cz(r) - z) <= radius) out.push([c, r]);
+    return out;
   }
 
   // --- grilla ---------------------------------------------------------------
@@ -285,7 +325,7 @@ export class World {
       const crateMat = this.keep(new THREE.MeshStandardMaterial({
         map: tex('cajon.webp'), normalMap: tex('cajon-n.webp', { data: true }), normalScale: new THREE.Vector2(1.4, 1.4), roughness: 0.8,
       }));
-      const crateMesh = new THREE.InstancedMesh(crateGeo, crateMat, crates.length);
+      const crateMesh = (this.crateMesh = new THREE.InstancedMesh(crateGeo, crateMat, crates.length));
       crateMesh.castShadow = crateMesh.receiveShadow = true;
       crates.forEach(([x, z], n) => {
         dummy.position.set(x, 0.47, z);
@@ -305,7 +345,11 @@ export class World {
       map: this.keep(contactTexture()), color: 0x1a0f05, transparent: true, depthWrite: false, opacity: 0.85,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     }));
-    const aoMesh = new THREE.InstancedMesh(aoGeo, aoMat, aoList.length);
+    const aoMesh = (this.aoMesh = new THREE.InstancedMesh(aoGeo, aoMat, aoList.length));
+    this.hideMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+    this.crates = new Map(); // baldosa -> { vida, instancia del cajón, instancia de su sombra }
+    const firstCrateAo = aoList.length - 1 - crates.length;
+    crates.forEach(([x, z], n) => this.crates.set(this.row(z) * W + this.col(x), { hp: 1600, n, ao: firstCrateAo + n }));
     aoList.forEach(([x, z], n) => {
       dummy.position.set(x, 0.006, z);
       dummy.scale.set(1, 1, 1);
@@ -358,7 +402,10 @@ export class World {
     this.bushMesh.frustumCulled = false;
     this.bushMesh.userData.noAO = true;
     const greens = [0x5fae2e, 0x4d9a26, 0x78bf3a, 0x8fc440, 0x3f8a22];
+    this.bushPer = PER;
+    this.bushStart = new Map(); // baldosa -> primera hoja de esa mata
     bushTiles.forEach(([x, z], n) => {
+      this.bushStart.set(this.row(z) * W + this.col(x), n * PER);
       for (let k = 0; k < PER; k++) {
         const sx = 0.8 + rand() * 0.8;
         dummy.position.set(x + (rand() - 0.5) * 0.94, 0, z + (rand() - 0.5) * 0.94);

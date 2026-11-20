@@ -6,7 +6,8 @@ import { World } from './world.js';
 import { Fx } from './fx.js';
 import { audio } from './audio.js';
 import { Bot } from './ai.js';
-import { shaderTime, grassFighters, shieldMaterial, zoneMaterial, indicatorMaterial } from './shaders.js';
+import { shaderTime, grassFighters, grassShocks, shieldMaterial, zoneMaterial, indicatorMaterial } from './shaders.js';
+import { Debris } from './physics.js';
 
 const R = 0.4; // radio de un luchador
 const DEG = Math.PI / 180;
@@ -31,10 +32,15 @@ const SHOT_COLOR = { bolt: 0xffc23a, ember: 0xff8a2a, dart: 0x7df9ff, orb: 0x39e
 const ZONE_COLOR = { stars: 0xa98bff, toxic: 0x8dff4a };
 const ENEMY_COLOR = 0xff3355;
 const UP = new THREE.Vector3(0, 1, 0);
+const WOOD = [0xa9743c, 0x8a5526, 0xc98d4b, 0x6e4420];
+const BLOOD = [0x8a0a0a, 0xb01010, 0x5e0505];
+const DIRT = [0x6b4a2a, 0x8a6a44, 0x4e3620];
+const qA = new THREE.Quaternion(), qB = new THREE.Quaternion(), vAxis = new THREE.Vector3();
 const DEFAULT_Q = { shadow: 2048, shadowRadius: 2.4, lights: 0, boost: 1, fxScale: 1 };
 
 export class Match {
-  constructor({ heroId, input, hud, layer, onEnd, env = null, quality = null }) {
+  constructor({ heroId, input, hud, layer, onEnd, env = null, quality = null, gore = true }) {
+    this.gore = gore; // sangre y manchas; apagado, los golpes sueltan chispas blancas
     const q = (this.q = quality || DEFAULT_Q);
     this.hitStop = 0;
     this.zoomKick = 0;
@@ -89,6 +95,17 @@ export class Match {
 
     this.world = new World(scene);
     this.fx = new Fx(scene, layer, q);
+    this.debris = new Debris(scene, this.world, {
+      max: Math.round(170 * q.fxScale),
+      onSplash: (x, z, y, size) => { this.fx.splash(x, z, y, size); this.sfx('splash', { x, z }, 0.5); },
+    });
+    // No se mancha el agua, ni arriba de un muro, ni fuera de la isla.
+    this.fx.canStain = (x, z) => {
+      const w = this.world, c = w.col(x), r = w.row(z);
+      return c >= 0 && r >= 0 && c < w.W && r < w.H && !w.blocksMove(c, r);
+    };
+    this.shocks = [{ t: 1, dur: 1 }, { t: 1, dur: 1 }];
+    this.shockI = 0;
     this.projectiles = [];
     this.lobs = [];
     this.zones = [];
@@ -136,7 +153,8 @@ export class Match {
       x: sp.x, z: sp.z, airY: 0, kx: 0, kz: 0, mvx: 0, mvz: 0, velx: 0, velz: 0,
       hp: def.hp, maxHp: def.hp, ammo: RULES.ammoMax, attackCd: 0, super: 0, superTold: false,
       alive: true, respawnT: 0, shieldT: 0, revealT: 0, aimHold: 0, aim: dir, moveAng: dir, face: dir,
-      moveAmt: 0, phase: 0, kick: 0, punch: 0, pop: 1, ghost: false, lastHurtT: -99, lastActT: -99,
+      moveAmt: 0, phase: 0, kick: 0, punch: 0, pop: 1, ghost: false,
+      ivx: 0, ivz: 0, leanX: 0, leanZ: 0, hitX: 0, hitZ: 1, corpse: null, lastHurtT: -99, lastActT: -99,
       inBush: false, visTo: [true, true], cores: 0, action: null, queue: [], rig, bot: null,
       stats: { kills: 0, deaths: 0, dmg: 0, cores: 0 },
     };
@@ -158,6 +176,9 @@ export class Match {
     f.blob.renderOrder = 1;
     this.scene.add(f.blob);
     f.stepN = 0;
+    // Pose de reposo de cada parte, para devolverla tras la caída del cuerpo.
+    f.parts = [rig.torso, rig.head, rig.armL, rig.armR, rig.legL, rig.legR];
+    f.rest = f.parts.map((g) => g.rotation.clone());
     this.own.push(ringMat, shieldMat);
     f.tag = this.hud.makeTag(f);
     if (!isPlayer) f.bot = new Bot(f, this, lane);
@@ -217,6 +238,11 @@ export class Match {
     this.updateLobs(dt);
     this.updateZones(dt);
     this.updateCores(dt);
+    this.debris.update(dt);
+    this.shocks.forEach((sh, i) => {
+      sh.t += dt;
+      grassShocks.value[i].set(sh.x || 0, sh.z || 0, sh.radius || 1, sh.t < sh.dur ? sh.strength * (1 - sh.t / sh.dur) : 0);
+    });
     if (this.state === 'play') this.updateRules(dt);
     this.updateView(dt, rawDt);
   }
@@ -489,9 +515,17 @@ export class Match {
       f.hp += h;
       if (h > 0 && (f.team === ME || f.visTo[ME])) this.fx.text(f.x, f.rig.height + 0.6, f.z, '+' + h, 'heal');
     }
+    const w = this.world;
+    for (let d = 0.4; d <= len + 0.6; d += 0.5) {
+      const c = w.col(f.x + dx * d), r = w.row(f.z + dz * d);
+      if (w.damageCrate(c, r, s.dmg * 1.4) === 'broken') this.breakCrate(c, r, dx, dz);
+      if (w.cutBush(c, r)) this.fx.burst(w.cx(c), 0.5, w.cz(r), { n: 12, color: [0x4d9a26, 0x78bf3a, 0x8fc440], speed: 3.5, up: 4.5, life: 0.8, size: 0.09, grav: 7, hot: false, spread: 0.4 });
+    }
+    this.debris.impulse(f.x + dx * len * 0.5, f.z + dz * len * 0.5, len * 0.6 + 1, 5);
     if (f.team === ME || f.visTo[ME]) {
       for (let d = 0.5; d < len; d += 0.45) {
         const x = f.x + dx * d, z = f.z + dz * d;
+        this.debris.add('rock', x, 0.1, z, (Math.random() - 0.5) * 3 + dz * (Math.random() - 0.5) * 4, 3.5 + Math.random() * 3, (Math.random() - 0.5) * 3 - dx * (Math.random() - 0.5) * 4, { size: 0.07 + Math.random() * 0.12, color: DIRT[Math.floor(Math.random() * 3)], life: 6 });
         this.fx.burst(x, 0.15, z, { n: 5, color: [0x6b4a2a, 0x9a6e3c, 0xd9b46a, 0x3a2a1c], speed: 2.6, up: 4.5, life: 0.55, size: 0.15, spread: s.width * 0.3, hot: false });
         this.fx.puff(x, 0.25, z, { n: 1, size: 1.0, life: 0.9, alpha: 0.4, rise: 0.9, color: 0xb9925c });
         if (Math.round(d / 0.45) % 3 === 0) this.fx.scorch(x, z, s.width * 0.75, 5);
@@ -511,7 +545,17 @@ export class Match {
     mesh.position.set(x, 0.8, z);
     mesh.rotation.y = ang;
     f.kick = 1;
-    if (f.team === ME || f.visTo[ME]) this.fx.burst(x, 0.8, z, { n: 4, color: [color, 0xffffff], speed: 2.5, up: 1, life: 0.2, size: 0.08, vx: dx * 4, vz: dz * 4 });
+    const recoil = s.pierce ? 3 : s.dmg > 800 ? 1.7 : 0.5; // el arma empuja hacia atrás al que dispara
+    f.kx -= dx * recoil;
+    f.kz -= dz * recoil;
+    if (f.team === ME || f.visTo[ME]) {
+      this.fx.burst(x, 0.8, z, { n: 4, color: [color, 0xffffff], speed: 2.5, up: 1, life: 0.2, size: 0.08, vx: dx * 4, vz: dz * 4 });
+      if (s.visual === 'bolt') {
+        // casquillo que salta hacia el costado
+        const side = Math.random() < 0.5 ? 1 : -1;
+        this.debris.add('box', f.x + dx * 0.3, 0.85, f.z + dz * 0.3, dz * side * 2.4 - dx, 3.2, -dx * side * 2.4 - dz, { size: [0.05, 0.05, 0.12], color: 0xd9a441, life: 3.5, spin: 22 });
+      }
+    }
     this.projectiles.push({
       x, z, dx, dz, speed: s.speed, left: s.range - 0.55, r: s.radius, dmg: s.dmg, owner: f, team: f.team,
       pierce: !!s.pierce, knock: s.knock || 0, hit: new Set(), mesh, color, visual: s.visual, trail: 0,
@@ -524,6 +568,7 @@ export class Match {
     f.kick = 1;
     const ang = f.aim + (i % 2 ? 0.25 : -0.25);
     if (f.team === ME || f.visTo[ME]) this.fx.slash(f.x, f.z, ang, s.arc, s.range, f.team === ME ? 0xdff6ff : 0xff8a9a);
+    this.hitObstacle(f.x + Math.sin(f.aim) * 0.9, f.z + Math.cos(f.aim) * 0.9, Math.sin(f.aim), Math.cos(f.aim), s.dmg);
     for (const e of this.fighters) {
       if (e.team === f.team || !e.alive || e.ghost) continue;
       const dx = e.x - f.x, dz = e.z - f.z, d = Math.hypot(dx, dz);
@@ -559,11 +604,18 @@ export class Match {
         if (src.isPlayer) audio.play('ready');
       }
     }
+    // De dónde vino el golpe: hacia allá salta la sangre, se inclina el cuerpo y, si muere, cae.
+    let hx = push ? push.kx : src ? e.x - src.x : 0, hz = push ? push.kz : src ? e.z - src.z : 0;
+    const hl = Math.hypot(hx, hz);
+    if (hl > 0.01) { hx /= hl; hz /= hl; e.hitX = hx; e.hitZ = hz; }
+    const jolt = clamp(amt / 900, 0.25, 1);
+    e.leanX = clamp(e.leanX + hx * jolt, -1.2, 1.2);
+    e.leanZ = clamp(e.leanZ + hz * jolt, -1.2, 1.2);
     const seen = e.team === ME || e.visTo[ME];
     if (seen) {
       const cls = e.isPlayer ? 'hurt' : src && src.isPlayer ? 'mine' : e.team === ME ? 'ally' : '';
       this.fx.text(e.x, e.rig.height + 0.5 + e.airY, e.z, String(amt), cls);
-      this.fx.burst(e.x, 0.8, e.z, { n: 5, color: [0xffffff, e.def.color], speed: 3.5, life: 0.3, size: 0.08 });
+      this.bleed(e, amt, hx, hz);
     }
     if (e.isPlayer) {
       audio.play('hurt');
@@ -591,10 +643,11 @@ export class Match {
       this.spawnCore(e.x, e.z, t.x, t.z);
     }
     e.cores = 0;
-    this.fx.burst(e.x, 0.8, e.z, { n: 26, color: [e.def.color, 0xffffff, TEAMS[e.team].color], speed: 6, up: 5, life: 0.7, size: 0.14 });
+    e.ivx = e.ivz = 0;
+    e.leanX = e.leanZ = 0;
     this.fx.ring(e.x, e.z, 0.4, 2.4, TEAMS[e.team].color, 0.45);
-    this.fx.puff(e.x, 0.6, e.z, { n: 6, size: 1.1, life: 0.9, alpha: 0.45, rise: 1.2, speed: 1.4, color: 0xe8e2d8 });
     this.fx.flash(e.x, 1.2, e.z, TEAMS[e.team].color, 40, 0.4);
+    this.die(e);
     if (e.isPlayer || (src && src.isPlayer)) this.hitStop = 0.07;
     this.sfx('death', e);
     this.hud.feed(src || null, e);
@@ -604,7 +657,155 @@ export class Match {
     }
   }
 
+  // Golpe recibido: lo que salta depende de qué está hecho el personaje.
+  bleed(e, amt, hx, hz) {
+    const kind = e.def.gore.blood, fx = this.fx, y = 0.9 + e.airY;
+    const n = clamp(Math.round(amt / 140), 2, 10);
+    if (kind === 'blood' && this.gore) {
+      fx.burst(e.x, y, e.z, { n, color: BLOOD, speed: 2.2, up: 3.2, life: 0.75, size: 0.07, grav: 16, hot: false, vx: hx * 3.6, vz: hz * 3.6, stain: 'blood' });
+      if (amt > 600) fx.stain('blood', e.x + hx * 0.5, e.z + hz * 0.5, 0.5 + Math.random() * 0.4, { life: 16 });
+      if (e.def.id === 'nox') fx.burst(e.x, y, e.z, { n: 2, color: [0x34345f, 0x4d4f75], speed: 2, up: 2.5, life: 0.9, size: 0.09, grav: 3, drag: 3, hot: false });
+    } else if (kind === 'oil') {
+      fx.burst(e.x, y, e.z, { n: Math.ceil(n / 2), color: [0x0a0a0e, 0x1b1b22], speed: 2, up: 3, life: 0.7, size: 0.07, grav: 16, hot: false, vx: hx * 3, vz: hz * 3, stain: 'oil' });
+      fx.burst(e.x, y, e.z, { n, color: [0xffe14a, 0xffffff, 0xff9a2a], speed: 5, up: 3, life: 0.3, size: 0.05, vx: hx * 3, vz: hz * 3 });
+      if (amt > 500) this.debris.add('box', e.x, y, e.z, hx * 3 + Math.random() - 0.5, 4, hz * 3 + Math.random() - 0.5, { size: [0.06, 0.06, 0.1], color: 0xb9c2cc, life: 5, spin: 18 });
+    } else if (kind === 'lava') {
+      fx.burst(e.x, y, e.z, { n, color: [0xff5a0a, 0xffc21a, 0xff8a2a], speed: 3, up: 3.5, life: 0.6, size: 0.08, grav: 12, vx: hx * 3, vz: hz * 3 });
+      if (amt > 400) this.debris.add('rock', e.x, y, e.z, hx * 3 + Math.random() - 0.5, 4, hz * 3 + Math.random() - 0.5, { size: 0.08 + Math.random() * 0.1, color: 0x3a3231, life: 6 });
+    } else {
+      fx.burst(e.x, y, e.z, { n: 5, color: [0xffffff, e.def.color], speed: 3.5, life: 0.3, size: 0.08 });
+    }
+  }
+
+  // Muerte: los de carne caen hacia donde los empujó el golpe; el robot y el gólem se desarman.
+  die(e) {
+    const fx = this.fx, db = this.debris, hx = e.hitX, hz = e.hitZ;
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    if (e.def.gore.death === 'break') {
+      const push = { dx: hx * 2.5, dz: hz * 2.5, height: 1.1, spread: 0.35 };
+      if (e.def.id === 'tuerca') {
+        db.burst('box', e.x, 0.3, e.z, 8, { ...push, size: () => [rnd(0.18, 0.34), rnd(0.1, 0.2), rnd(0.14, 0.26)], color: [0xd9701c, 0xe2852c, 0x3a3837], speed: 3.5, up: 6, life: 9 });
+        db.burst('rock', e.x, 0.6, e.z, 4, { ...push, size: () => rnd(0.12, 0.22), color: [0xb9c2cc, 0x8f98a3], speed: 3, up: 6, life: 9 });
+        db.add('rock', e.x, 1.2, e.z, hx * 3, 6.5, hz * 3, { size: 0.52, color: 0xc4ccd4, life: 9, spin: 6 }); // el casco
+        db.burst('box', e.x, 0.6, e.z, 7, { ...push, size: [0.05, 0.05, 0.1], color: 0xb9c2cc, speed: 5, up: 7, life: 6, spin: 20 });
+        fx.burst(e.x, 0.8, e.z, { n: 26, color: [0xffe14a, 0xffffff, 0xff9a2a], speed: 7, up: 5, life: 0.5, size: 0.06 });
+        fx.stain('oil', e.x, e.z, 1.7, { grow: 2.2, life: 20 });
+        fx.puff(e.x, 0.6, e.z, { n: 7, size: 1.2, life: 1.5, alpha: 0.5, rise: 1.4, speed: 1.2, color: 0x2a2a30 });
+        this.sfx('clank', e);
+      } else {
+        db.burst('rock', e.x, 0.3, e.z, 13, { ...push, size: () => rnd(0.16, 0.42), color: [0x3a3231, 0x52424a, 0x2c2527], speed: 3.5, up: 6, life: 9 });
+        db.burst('rock', e.x, 0.6, e.z, 6, { ...push, size: () => rnd(0.09, 0.18), color: 0xff5a0a, glow: 2.2, speed: 4.5, up: 7, life: 5 });
+        fx.burst(e.x, 0.8, e.z, { n: 30, color: [0xff5a0a, 0xffc21a, 0xff8a2a], speed: 6, up: 6, life: 0.8, size: 0.1, grav: 10 });
+        fx.scorch(e.x, e.z, 1.6, 12);
+        fx.puff(e.x, 0.6, e.z, { n: 7, size: 1.3, life: 1.4, alpha: 0.45, rise: 1.3, speed: 1.4, color: 0x5a4a44 });
+        this.sfx('boom', e, 0.7);
+      }
+      return;
+    }
+    // Cuerpo que cae: un péndulo invertido que arranca con el empujón del golpe.
+    e.corpse = {
+      t: 0, ang: 0.08, w: 2.6, dx: hx, dz: hz, vx: hx * 4.5, vz: hz * 4.5, landed: false,
+      pose: e.parts.map(() => new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.3, 0.3), rnd(-0.9, 0.9))),
+    };
+    if (this.gore) {
+      fx.burst(e.x, 1, e.z, { n: 18, color: BLOOD, speed: 3.2, up: 4.5, life: 0.9, size: 0.08, grav: 16, hot: false, vx: hx * 3, vz: hz * 3, stain: 'blood' });
+      fx.stain('blood', e.x + hx * 0.8, e.z + hz * 0.8, 1.5 + Math.random() * 0.5, { grow: 2.8, life: 22 });
+    } else fx.burst(e.x, 0.8, e.z, { n: 20, color: [e.def.color, 0xffffff], speed: 6, up: 5, life: 0.6, size: 0.12 });
+    if (e.def.id === 'nox') fx.burst(e.x, 1, e.z, { n: 12, color: [0x34345f, 0x4d4f75, 0xeadfc6], speed: 3, up: 4, life: 1.4, size: 0.1, grav: 2.5, drag: 3, hot: false });
+  }
+
+  // Avanza la caída de un cuerpo y lo retira un rato después.
+  updateCorpse(f, dt) {
+    const c = f.corpse, root = f.rig.root;
+    c.t += dt;
+    if (c.ang < Math.PI / 2 || c.w !== 0) {
+      c.w += 22 * Math.sin(Math.max(0.1, c.ang)) * dt;
+      c.ang += c.w * dt;
+      if (c.ang >= Math.PI / 2) {
+        c.ang = Math.PI / 2;
+        if (!c.landed) {
+          c.landed = true;
+          this.sfx('thud', f, 0.8);
+          this.fx.puff(f.x + c.dx * 0.8, 0.15, f.z + c.dz * 0.8, { n: 4, size: 0.9, life: 0.7, alpha: 0.35, rise: 0.5, speed: 1.2, spread: 0.4, color: 0xdcbd8c });
+        }
+        c.w = c.w > 2.2 ? -c.w * 0.2 : 0;
+      }
+    }
+    const k = Math.exp(-5 * dt);
+    f.x += c.vx * dt; f.z += c.vz * dt;
+    c.vx *= k; c.vz *= k;
+    this.world.resolve(f, R);
+    const out = Math.max(0, (c.t - 3.5) / 0.6); // al final se hunde y desaparece
+    root.position.set(f.x, -out * 0.6, f.z);
+    root.scale.setScalar(1 - out * 0.4);
+    qA.setFromAxisAngle(vAxis.set(c.dz, 0, -c.dx), c.ang);
+    root.quaternion.copy(qA).multiply(qB.setFromAxisAngle(UP, f.face));
+    const limp = Math.min(1, c.t * 4);
+    f.parts.forEach((g, i) => {
+      const a = f.rest[i], b = c.pose[i];
+      g.rotation.set(a.x + b.x * limp, a.y + b.y * limp, a.z + b.z * limp);
+    });
+    if (out >= 1) {
+      f.corpse = null;
+      root.visible = false;
+    }
+  }
+
+  // Deja al luchador de pie y con el cuerpo como al principio.
+  resetPose(f) {
+    f.corpse = null;
+    f.rig.root.rotation.set(0, f.face, 0);
+    f.rig.root.scale.setScalar(1);
+    f.parts.forEach((g, i) => g.rotation.copy(f.rest[i]));
+  }
+
+  // Algo pega contra una baldosa sólida: astillas si es un cajón (y se rompe si no aguanta),
+  // esquirlas de piedra si es un muro.
+  hitObstacle(x, z, dx, dz, dmg) {
+    const w = this.world, c = w.col(x), r = w.row(z);
+    if (!w.blocksShot(c, r)) return;
+    const res = w.damageCrate(c, r, dmg);
+    const bx = x - dx * 0.3, bz = z - dz * 0.3;
+    if (res === 'broken') this.breakCrate(c, r, dx, dz);
+    else if (res === 'hit') {
+      this.debris.burst('box', bx, 0.6, bz, 2, { size: () => [0.13 + Math.random() * 0.1, 0.03, 0.05], color: WOOD, speed: 2.2, up: 3.2, dx: -dx * 2, dz: -dz * 2, life: 4, spin: 16, spread: 0.1, height: 0.4 });
+      this.sfx('wood', { x, z }, 0.35);
+    } else this.debris.burst('rock', bx, 0.6, bz, 2, { size: () => 0.05 + Math.random() * 0.07, color: [0x8a98a6, 0x6f7f8e], speed: 2.4, up: 3, dx: -dx * 2.2, dz: -dz * 2.2, life: 5, spread: 0.1, height: 0.4 });
+  }
+
+  // Onda expansiva: rompe cajones, puede cortar el pasto, empuja escombros y aplasta el pasto.
+  blast(x, z, radius, dmg, cutGrass) {
+    const w = this.world;
+    for (const [c, r] of w.tilesIn(x, z, radius + 0.35)) {
+      if (w.damageCrate(c, r, dmg * 1.4) === 'broken') this.breakCrate(c, r, w.cx(c) - x, w.cz(r) - z);
+      if (cutGrass && w.cutBush(c, r)) this.fx.burst(w.cx(c), 0.5, w.cz(r), { n: 12, color: [0x4d9a26, 0x78bf3a, 0x8fc440], speed: 3.5, up: 4.5, life: 0.8, size: 0.09, grav: 7, hot: false, spread: 0.4 });
+    }
+    this.debris.impulse(x, z, radius * 1.7, 7);
+    this.shock(x, z, radius * 1.9, 1);
+  }
+
+  shock(x, z, radius, strength) {
+    this.shockI = (this.shockI + 1) % 2;
+    this.shocks[this.shockI] = { x, z, radius, strength, t: 0, dur: 0.6 };
+  }
+
+  breakCrate(c, r, dx, dz) {
+    const w = this.world, x = w.cx(c), z = w.cz(r), l = Math.hypot(dx, dz) || 1;
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    this.debris.burst('box', x, 0.15, z, 13, {
+      size: () => [rnd(0.45, 0.85), 0.05, rnd(0.1, 0.17)], color: WOOD, speed: 3.2, up: 6, height: 0.8, spread: 0.4,
+      dx: (dx / l) * 3, dz: (dz / l) * 3, life: 10, spin: 10,
+    });
+    this.fx.burst(x, 0.5, z, { n: 14, color: WOOD, speed: 4, up: 4, life: 0.5, size: 0.06, hot: false });
+    this.fx.puff(x, 0.4, z, { n: 5, size: 1.1, life: 0.9, alpha: 0.4, rise: 0.8, speed: 1.4, color: 0xcdb08a });
+    this.sfx('wood', { x, z });
+    this.shock(x, z, 1.6, 0.5);
+    const d = Math.hypot(x - this.camT.x, z - this.camT.z);
+    this.shake = Math.max(this.shake, clamp(0.3 - d / 30, 0, 0.3));
+  }
+
   respawn(f) {
+    this.resetPose(f);
     const sp = this.world.spawns[f.team][f.slot];
     f.x = sp.x; f.z = sp.z;
     f.hp = f.maxHp;
@@ -625,6 +826,7 @@ export class Match {
   // ----------------------------------------------------------- luchadores --
   updateFighter(f, dt) {
     if (!f.alive) {
+      if (f.corpse) this.updateCorpse(f, dt);
       f.respawnT -= dt;
       if (f.isPlayer && this.state === 'play') this.hud.setRespawn(Math.max(1, Math.ceil(f.respawnT)));
       if (f.respawnT <= 0 && this.state === 'play') this.respawn(f);
@@ -632,6 +834,9 @@ export class Match {
     }
     f.attackCd -= dt; f.shieldT -= dt; f.revealT -= dt; f.aimHold -= dt;
     f.kick = Math.max(0, f.kick - dt * 5);
+    const ld = Math.exp(-7 * dt);
+    f.leanX *= ld;
+    f.leanZ *= ld;
     f.punch = Math.max(0, f.punch - dt * 7);
     f.pop = Math.min(1, f.pop + dt * 4);
     for (let i = f.queue.length - 1; i >= 0; i--) {
@@ -649,9 +854,13 @@ export class Match {
       let mx = f.mvx, mz = f.mvz;
       const ml = Math.hypot(mx, mz);
       if (ml > 1) { mx /= ml; mz /= ml; }
-      const amt = Math.min(1, ml);
-      f.x += (mx * f.def.speed + f.kx) * dt;
-      f.z += (mz * f.def.speed + f.kz) * dt;
+      // La velocidad no cambia de golpe: acelera y frena en una décima de segundo.
+      const acc = 1 - Math.exp(-dt * 15);
+      f.ivx += (mx * f.def.speed - f.ivx) * acc;
+      f.ivz += (mz * f.def.speed - f.ivz) * acc;
+      const amt = Math.min(1, Math.hypot(f.ivx, f.ivz) / f.def.speed);
+      f.x += (f.ivx + f.kx) * dt;
+      f.z += (f.ivz + f.kz) * dt;
       const k = Math.exp(-9 * dt);
       f.kx *= k; f.kz *= k;
       this.world.resolve(f, R);
@@ -663,7 +872,7 @@ export class Match {
         if (!f.inBush && (f.team === ME || f.visTo[ME]))
           this.fx.puff(f.x - mx * 0.2, 0.1, f.z - mz * 0.2, { n: 1, size: 0.42, life: 0.5, alpha: 0.26, rise: 0.35, speed: 0.3, color: 0xdcbd8c });
       }
-      if (amt > 0.1) f.moveAng = Math.atan2(mx, mz);
+      if (ml > 0.1) f.moveAng = Math.atan2(mx, mz);
     }
     if (dt > 0) {
       const s = Math.min(1, dt * 10);
@@ -687,6 +896,7 @@ export class Match {
     f.x = a.fx + (a.tx - a.fx) * u;
     f.z = a.fz + (a.tz - a.fz) * u;
     f.moveAmt = 0;
+    f.ivx = f.ivz = 0;
     const seen = f.team === ME || f.visTo[ME];
     if (a.type === 'leap') {
       f.airY = Math.sin(u * Math.PI) * 3.4;
@@ -700,6 +910,8 @@ export class Match {
         this.fx.burst(f.x, 0.3, f.z, { n: 30, color: [0xff6a1a, 0xffd23f, 0x52424a], speed: 8, up: 5, life: 0.6, size: 0.16 });
         this.fx.scorch(f.x, f.z, s.aoe * 0.95, 8);
         this.fx.flash(f.x, 1.4, f.z, 0xff7a2a, 70, 0.5);
+        this.blast(f.x, f.z, s.aoe, s.dmg, true);
+        this.debris.burst('rock', f.x, 0.1, f.z, 10, { size: () => 0.07 + Math.random() * 0.13, color: [0x8a6a44, 0x6b5238, 0x3a3231], speed: 5, up: 6.5, spread: 0.9, life: 7 });
         this.fx.puff(f.x, 0.3, f.z, { n: 8, size: 1.4, life: 1.1, alpha: 0.45, rise: 1.0, speed: 2.4, spread: 0.6, color: 0x8a7868 });
         this.sfx('boom', f);
         const d = Math.hypot(f.x - this.camT.x, f.z - this.camT.z);
@@ -717,6 +929,8 @@ export class Match {
       if (u >= 1) {
         f.action = null;
         f.ghost = false;
+        const dl = Math.hypot(a.tx - a.fx, a.tz - a.fz) || 1, ddx = (a.tx - a.fx) / dl, ddz = (a.tz - a.fz) / dl;
+        this.hitObstacle(f.x + ddx * 0.7, f.z + ddz * 0.7, ddx, ddz, s.dmg * 1.6);
         this.world.resolve(f, R);
       }
     }
@@ -747,6 +961,8 @@ export class Match {
         p.x += p.dx * sd; p.z += p.dz * sd; p.left -= sd;
         if (this.world.shotBlockedAt(p.x, p.z)) {
           this.fx.burst(p.x, 0.8, p.z, { n: 6, color: [p.color, 0xffffff], speed: 3, life: 0.25, size: 0.08, vx: -p.dx * 2, vz: -p.dz * 2 });
+          this.hitObstacle(p.x, p.z, p.dx, p.dz, p.dmg);
+          if (p.pierce) this.blast(p.x, p.z, 1.3, p.dmg, false);
           dead = true;
           break;
         }
@@ -788,7 +1004,10 @@ export class Match {
       this.fx.ring(l.tx, l.tz, 0.3, s.aoe, l.color, 0.35);
       this.fx.ring(l.tx, l.tz, 0.2, s.aoe, l.color, 0.25, true);
       this.fx.burst(l.tx, 0.3, l.tz, { n: 18, color: [l.color, 0xffffff], speed: 6, up: 4, life: 0.5, size: 0.12 });
-      this.fx.scorch(l.tx, l.tz, s.aoe * 0.8, 6);
+      const wet = this.world.type(this.world.col(l.tx), this.world.row(l.tz)) === 3;
+      if (wet) { this.fx.splash(l.tx, l.tz, -0.14, 1.3); this.sfx('splash', { x: l.tx, z: l.tz }); } else this.fx.scorch(l.tx, l.tz, s.aoe * 0.8, 6);
+      this.blast(l.tx, l.tz, s.aoe, s.dmg, !!s.zone);
+      this.debris.burst('box', l.tx, 0.3, l.tz, 6, { size: [0.07, 0.012, 0.05], color: [0xffd6f2, 0xe8f6ff], speed: 4, up: 4.5, life: 4, spin: 20 });
       this.fx.flash(l.tx, 1.1, l.tz, l.color, 34, 0.4);
       this.fx.puff(l.tx, 0.3, l.tz, { n: 5, size: 1.0, life: 0.9, alpha: 0.4, rise: 0.9, speed: 1.6, color: l.color });
       this.sfx('boom', { x: l.tx, z: l.tz }, 0.7);
@@ -957,7 +1176,7 @@ export class Match {
     for (const f of this.fighters) {
       const seen = f.alive && (f.team === ME || f.visTo[ME]);
       const root = f.rig.root;
-      root.visible = seen;
+      root.visible = seen || !!f.corpse;
       f.ring.visible = seen && !f.ghost;
       f.blob.visible = seen;
       if (seen) {
@@ -965,8 +1184,11 @@ export class Match {
         root.rotation.y = f.face;
         const e = 1 - (1 - f.pop) ** 3;
         root.scale.setScalar((0.2 + 0.8 * e) * (1 + f.punch * 0.1));
-        if (f.action && f.action.type === 'dash') root.rotation.x = 0.5;
-        else root.rotation.x = f.action ? -0.4 : 0;
+        // Los golpes recibidos inclinan el cuerpo hacia donde empujan.
+        const cs = Math.cos(f.face), sn = Math.sin(f.face);
+        const lf = f.leanX * sn + f.leanZ * cs, ls = f.leanX * cs - f.leanZ * sn;
+        root.rotation.x = (f.action ? (f.action.type === 'dash' ? 0.5 : -0.4) : 0) + lf * 0.32;
+        root.rotation.z = -ls * 0.32;
         anim.move = f.moveAmt; anim.phase = f.phase; anim.kick = f.kick;
         animateRig(f.rig, anim);
         f.ring.position.set(f.x, 0.035, f.z);
@@ -1037,6 +1259,17 @@ export class Match {
       if (!f.alive || f.def.id !== 'brasa' || !(f.team === ME || f.visTo[ME])) continue;
       fx.burst(f.x, 1.7 + f.airY, f.z, { n: 1, color: [0xff7a12, 0xffc21a], speed: 0.5, up: 1.6, life: 0.7, size: 0.05, grav: -1.5, drag: 1 });
     }
+    // Malheridos: gotean sangre, pierden aceite y humo, o se les apaga la lava.
+    for (const f of this.fighters) {
+      if (!f.alive || f.hp > f.maxHp * 0.35 || !(f.team === ME || f.visTo[ME])) continue;
+      const kind = f.def.gore.blood;
+      if (kind === 'blood' && this.gore) fx.burst(f.x, 0.7, f.z, { n: 1, color: BLOOD, speed: 0.5, up: 0.4, life: 0.6, size: 0.05, grav: 14, hot: false, stain: 'blood' });
+      else if (kind === 'oil') {
+        fx.puff(f.x, 1.3, f.z, { n: 1, size: 0.5, life: 0.9, alpha: 0.4, rise: 1.3, speed: 0.3, color: 0x2a2a30 });
+        if (Math.random() < 0.4) fx.burst(f.x, 1, f.z, { n: 3, color: [0xffe14a, 0xffffff], speed: 3, up: 2.5, life: 0.25, size: 0.04 });
+      }
+    }
+    this.hud.setLowHp(this.player.alive && this.player.hp < this.player.maxHp * 0.3);
     for (const k of this.cores) {
       if (k.landed && Math.random() < 0.25) fx.burst(k.x, 0.7, k.z, { n: 1, color: 0xc8ff3a, speed: 0.6, up: 1.2, life: 0.55, size: 0.04, grav: 1 });
     }
@@ -1063,6 +1296,7 @@ export class Match {
     for (const z of this.zones) z.mat.dispose();
     for (const c of this.cores) this.fx.remove(c.mesh);
     this.fx.dispose();
+    this.debris.dispose();
     this.world.dispose();
     for (const o of this.own) o.dispose?.();
     this.sun.shadow.map?.dispose();

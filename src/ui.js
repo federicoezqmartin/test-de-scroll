@@ -220,6 +220,16 @@ export class UI {
     if (n != null) r.textContent = `Reaparecés en ${n}`;
   }
 
+  setLowHp(on) {
+    if (on === this.last.low) return;
+    this.last.low = on;
+    $('vignette').classList.toggle('low', on);
+  }
+
+  setGore(on) {
+    for (const b of document.querySelectorAll('.g-label')) b.textContent = on ? 'Sí' : 'No';
+  }
+
   hurt() {
     const v = $('vignette');
     v.classList.remove('on');
@@ -232,6 +242,7 @@ export class UI {
     $('feed').textContent = '';
     $('big').className = '';
     $('banner').hidden = true;
+    $('vignette').classList.remove('low');
     this.layer.textContent = '';
   }
 

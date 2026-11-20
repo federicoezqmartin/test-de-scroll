@@ -126,6 +126,7 @@ button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 .cta { grid-area: cta; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
 .cta .goal { margin: 0; max-width: 46ch; font-size: 15px; line-height: 1.4; color: #dbe5f5; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
 .cta .goal b { color: var(--lime); font-weight: 600; }
+.chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .chip-btn { align-self: center; padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 .chip-btn b { color: var(--ink); font-weight: 600; }
 .chip-btn:hover { background: rgba(255, 255, 255, 0.18); }
@@ -310,6 +311,9 @@ body.touch #super-meter { display: none; }
 }
 #vignette { position: absolute; inset: 0; box-shadow: inset 0 0 120px 30px rgba(255, 40, 60, 0.55); opacity: 0; }
 #vignette.on { animation: hurt 0.4s; }
+#vignette.low { opacity: 0.55; animation: lowhp 0.9s ease-in-out infinite alternate; }
+#vignette.low.on { animation: hurt 0.4s; }
+@keyframes lowhp { from { opacity: 0.25; } to { opacity: 0.6; } }
 @keyframes hurt { from { opacity: 1; } to { opacity: 0; } }
 
 /* Controles táctiles */
@@ -417,5 +421,5 @@ body.touch .tbtn { display: grid; }
 #fatal p { max-width: 44ch; font-size: 18px; line-height: 1.5; }
 
 @media (prefers-reduced-motion: reduce) {
-  #banner.hot, .super-ready #super-meter, .super-ready #btn-super { animation: none; }
+  #banner.hot, .super-ready #super-meter, .super-ready #btn-super, #vignette.low { animation: none; }
 }

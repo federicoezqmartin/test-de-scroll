@@ -78,6 +78,11 @@ class AudioSys {
       case 'tick': T({ type: 'triangle', f0: 520, dur: 0.12, vol: 0.24 }); break;
       case 'go': [523, 659, 784, 1047].forEach((f) => T({ type: 'triangle', f0: f, dur: 0.4, vol: 0.13 })); break;
       case 'respawn': T({ f0: 330, f1: 990, dur: 0.25, vol: 0.2 }); break;
+      case 'wood': N({ dur: 0.22, vol: 0.4, f0: 1400, f1: 240, type: 'bandpass', q: 1.5 }); T({ type: 'square', f0: 190, f1: 70, dur: 0.12, vol: 0.2 }); N({ dur: 0.05, vol: 0.3, f0: 4000, type: 'highpass', delay: 0.03 }); break;
+      case 'clank': T({ type: 'square', f0: 1500, f1: 900, dur: 0.07, vol: 0.12 }); T({ type: 'triangle', f0: 2300, f1: 1700, dur: 0.16, vol: 0.1, delay: 0.02 }); N({ dur: 0.08, vol: 0.18, f0: 5200, type: 'highpass' }); break;
+      case 'squish': N({ dur: 0.11, vol: 0.3, f0: 900, f1: 220, type: 'lowpass', q: 3 }); T({ f0: 150, f1: 75, dur: 0.09, vol: 0.2 }); break;
+      case 'thud': T({ f0: 110, f1: 42, dur: 0.22, vol: 0.45 }); N({ dur: 0.12, vol: 0.2, f0: 500, f1: 120 }); break;
+      case 'splash': N({ dur: 0.3, vol: 0.28, f0: 2600, f1: 600, type: 'bandpass' }); break;
       case 'ui': T({ type: 'triangle', f0: 760, f1: 900, dur: 0.05, vol: 0.16 }); break;
       case 'win': [523, 659, 784, 1047, 1319].forEach((f, i) => T({ type: 'triangle', f0: f, dur: 0.3, vol: 0.2, delay: i * 0.12 })); break;
       case 'lose': [440, 392, 330, 262].forEach((f, i) => T({ type: 'triangle', f0: f, dur: 0.35, vol: 0.2, delay: i * 0.18 })); break;

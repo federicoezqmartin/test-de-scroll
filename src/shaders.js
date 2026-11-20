@@ -8,6 +8,8 @@ export const shaderTime = { value: 0 };
 
 // Posición (x, z) e intensidad de hasta 6 luchadores visibles: el pasto se abre a su paso.
 export const grassFighters = { value: Array.from({ length: 6 }, () => new THREE.Vector3(0, 0, 0)) };
+// Ondas expansivas (x, z, radio, fuerza): aplastan el pasto hacia afuera un instante.
+export const grassShocks = { value: Array.from({ length: 2 }, () => new THREE.Vector4(0, 0, 1, 0)) };
 
 const NOISE = /* glsl */ `
 float hash21(vec2 p) {
@@ -131,8 +133,9 @@ export function grassMaterial() {
   return patch(m, 'tz-grass', (s) => {
     s.uniforms.uTime = shaderTime;
     s.uniforms.uFighters = grassFighters;
+    s.uniforms.uShocks = grassShocks;
     s.vertexShader = s.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uFighters[6];\nvarying float vHgt;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uFighters[6];\nuniform vec4 uShocks[2];\nvarying float vHgt;')
       .replace('#include <project_vertex>', /* glsl */ `
         vec4 mvPosition = vec4(transformed, 1.0);
         vec3 gRoot = vec3(0.0);
@@ -151,6 +154,13 @@ export function grassMaterial() {
           float k = (1.0 - smoothstep(0.3, 1.15, dl)) * uFighters[i].z;
           bend += (dd / max(dl, 0.05)) * k * 0.6;
           flatK = max(flatK, k);
+        }
+        for (int i = 0; i < 2; i++) {
+          vec2 dd = gRoot.xz - uShocks[i].xy;
+          float dl = length(dd);
+          float k = (1.0 - smoothstep(0.2, uShocks[i].z, dl)) * uShocks[i].w;
+          bend += (dd / max(dl, 0.05)) * k * 0.9;
+          flatK = max(flatK, k * 0.8);
         }
         mvPosition.xz += bend * hgt * hgt;
         mvPosition.y *= 1.0 - flatK * 0.5;
@@ -309,8 +319,12 @@ export function indicatorMaterial(mode) {
 
 // --- Humo y polvo: cuadros que miran a cámara, con transparencia por instancia --
 export function puffMaterial(map) {
-  const m = new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false });
-  return patch(m, 'tz-puff', (s) => {
+  return instancedAlpha(new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false }));
+}
+
+// Agrega a cualquier material un atributo aAlpha por instancia que multiplica su transparencia.
+export function instancedAlpha(m) {
+  return patch(m, 'tz-ialpha', (s) => {
     s.vertexShader = s.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aAlpha;\nvarying float vAlpha;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAlpha = aAlpha;');
