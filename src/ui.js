@@ -1,5 +1,6 @@
 // Interfaz en DOM: menú, HUD de partida, pausa y resultados.
 import { HEROES, RULES, TEAMS, heroById } from './data.js';
+import { artUrl } from './assets.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -36,7 +37,7 @@ export class UI {
       b.type = 'button';
       b.dataset.id = h.id;
       b.style.setProperty('--c', h.color);
-      const img = el('img');
+      const img = el('img', h.art ? 'art' : '');
       img.alt = '';
       if (portraits[h.id]) img.src = portraits[h.id];
       const txt = el('span', 'hb-text');
@@ -58,6 +59,9 @@ export class UI {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
     $('hero-card').style.setProperty('--c', h.color);
+    const art = $('hc-art');
+    art.hidden = !h.art;
+    if (h.art) art.src = artUrl(h.art);
     $('hc-name').textContent = h.name;
     $('hc-role').textContent = h.role;
     $('hc-blurb').textContent = h.blurb;
@@ -231,7 +235,7 @@ export class UI {
     t.append(head);
     for (const f of res.fighters) {
       const row = el('div', `res-row t${f.team}${f.isPlayer ? ' me' : ''}`);
-      const img = el('img');
+      const img = el('img', heroById(f.hero).art ? 'art' : '');
       img.alt = '';
       if (this.portraits[f.hero]) img.src = this.portraits[f.hero];
       const who = el('span', 'who');

@@ -1,5 +1,6 @@
 // Arranque: renderer, menú con vitrina 3D, y ciclo menú -> partida -> resultados.
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import './style.css';
 import { HEROES, heroById } from './data.js';
 import { buildHero, animateRig, disposeRig } from './models.js';
@@ -7,6 +8,7 @@ import { Match } from './match.js';
 import { Input } from './input.js';
 import { UI } from './ui.js';
 import { audio } from './audio.js';
+import { artUrl, preloadArt } from './assets.js';
 
 const canvas = document.getElementById('game');
 const coarse = matchMedia('(pointer: coarse)').matches;
@@ -25,6 +27,12 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 
+// Entorno suave para que los metales y el vidrio tengan reflejos.
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+pmrem.dispose();
+preloadArt();
+
 const ui = new UI();
 const input = new Input({
   canvas,
@@ -42,6 +50,8 @@ class Showcase {
     const s = (this.scene = new THREE.Scene());
     s.background = new THREE.Color(0x0e1a2e);
     s.fog = new THREE.Fog(0x0e1a2e, 9, 22);
+    s.environment = envMap;
+    s.environmentIntensity = 0.6;
     this.camera = new THREE.PerspectiveCamera(30, 1, 0.5, 60);
     s.add(new THREE.HemisphereLight(0xdcebff, 0x39445c, 1.1));
     const key = new THREE.DirectionalLight(0xfff1d8, 2.8);
@@ -180,7 +190,7 @@ function startMatch(heroId) {
   ui.resetHud();
   lastHero = heroId;
   match = new Match({
-    heroId, input, hud: ui, layer: ui.layer, lowQuality: coarse,
+    heroId, input, hud: ui, layer: ui.layer, env: envMap, lowQuality: coarse,
     onEnd: (res) => {
       state = 'results';
       input.enabled = false;
@@ -209,7 +219,10 @@ ui.onSelect = (id, byUser) => {
   showcase.setHero(id);
   if (byUser) { audio.unlock(); audio.play('ui'); }
 };
-ui.buildRoster(showcase.portraits());
+// Retratos: el arte original donde existe; si no, una foto del modelo 3D.
+const portraits = showcase.portraits();
+for (const h of HEROES) if (h.art) portraits[h.id] = artUrl(h.art);
+ui.buildRoster(portraits);
 ui.setHints(coarse);
 ui.show('menu');
 

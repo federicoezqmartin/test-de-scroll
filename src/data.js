@@ -28,10 +28,13 @@ export const BOT_NAMES = ['Rulo', 'Mecha', 'Pipa', 'Tano', 'Fideo', 'Lola', 'Bri
   - leap  : salto a un punto, daño en área al caer.
   - dash  : embestida en línea, daña lo que atraviesa.
   - zone  : zona de daño por tiempo en un punto.
+  - line  : golpe en línea recta, instantáneo; puede curar una parte del daño hecho.
+  `art` es el recorte del arte original (public/arte) que se usa de retrato.
 */
 export const HEROES = [
   {
     id: 'tuerca',
+    art: 'ficha-tuerca.webp',
     name: 'Tuerca',
     role: 'Tiradora',
     blurb: 'Robot de taller reconvertida en pistolera. Constante, precisa y siempre con un remache de más.',
@@ -54,6 +57,7 @@ export const HEROES = [
   },
   {
     id: 'brasa',
+    art: 'ficha-brasa.webp',
     name: 'Brasa',
     role: 'Tanque',
     blurb: 'Gólem de lava con pocas palabras y puños enormes. Aguanta todo y de cerca no perdona.',
@@ -75,10 +79,11 @@ export const HEROES = [
   },
   {
     id: 'nox',
+    art: 'ficha-nox.webp',
     name: 'Nox',
     role: 'Francotiradora',
     blurb: 'Lechuza arquera que casi no se deja ver. Frágil, pero pega desde donde nadie llega.',
-    color: '#8f6bff',
+    color: '#9a7dff',
     hp: 3000,
     speed: 5.6,
     superNeed: 3400,
@@ -96,6 +101,7 @@ export const HEROES = [
   },
   {
     id: 'pompa',
+    art: 'ficha-pompa.webp',
     name: 'Pompa',
     role: 'Lanzadora',
     blurb: 'Rana alquimista. Sus frascos pasan por encima de las paredes y siempre caen donde molestan.',
@@ -137,7 +143,31 @@ export const HEROES = [
       kind: 'dash', range: 6, dur: 0.2, width: 1.15, dmg: 1200, sfx: 'super',
     },
   },
+  {
+    id: 'tajo',
+    art: 'ficha-tajo.webp',
+    name: 'Tajo',
+    role: 'Embestidor',
+    blurb: 'Zanjero de oficio. Avanza a los hachazos y, cuando clava el hacha, abre la tierra y se recupera con lo que arranca.',
+    color: '#c9833a',
+    hp: 4000,
+    speed: 6.1,
+    superNeed: 3200,
+    aiRange: 2.0,
+    bars: { Vida: 3, Daño: 4, Alcance: 2, Velocidad: 4 },
+    attack: {
+      name: 'Hachazo', desc: 'Se lanza hacia adelante y corta a los que cruza. Recarga lenta.',
+      kind: 'dash', range: 2.7, dur: 0.16, width: 1.05, dmg: 950, vuln: true,
+      sfx: 'slash', reload: 2.0, cd: 0.28,
+    },
+    super: {
+      name: 'Zanja', desc: 'Clava el hacha y abre una zanja en línea: daña, empuja y lo cura.',
+      kind: 'line', range: 7, width: 1.5, dmg: 1400, knock: 5, heal: 0.4, sfx: 'boom',
+    },
+  },
 ];
+
+export const GAME_NAME = 'Tu Zanja 3D';
 
 export const heroById = (id) => HEROES.find((h) => h.id === id) || HEROES[0];
 

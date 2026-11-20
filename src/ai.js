@@ -114,7 +114,7 @@ export class Bot {
     const w = m.world;
     let target = null, best = 1e9;
     for (const e of m.fighters) {
-      if (e.team === f.team || !e.alive || !e.visTo[f.team] || e.action) continue;
+      if (e.team === f.team || !e.alive || !e.visTo[f.team] || e.ghost) continue;
       const score = dist(f, e) + (e.hp / e.maxHp) * 2.5 - e.cores * 0.6;
       if (score < best) { best = score; target = e; }
     }
@@ -199,7 +199,7 @@ export class Bot {
   combat() {
     const { f, m } = this;
     const t = this.target;
-    if (m.state !== 'play' || !t || !t.alive || !t.visTo[f.team] || t.action || f.action) return;
+    if (m.state !== 'play' || !t || !t.alive || !t.visTo[f.team] || t.ghost || f.action) return;
     const w = m.world;
     const atk = f.def.attack, sup = f.def.super;
     const d = dist(f, t);
@@ -214,6 +214,7 @@ export class Bot {
         case 'zone':
         case 'lob': use = d < sup.range; ax += t.velx * 0.4; az += t.velz * 0.4; break;
         case 'dash': use = d < sup.range * 0.85 && w.shotClear(f.x, f.z, t.x, t.z); break;
+        case 'line': use = d < sup.range * 0.8 && w.shotClear(f.x, f.z, t.x, t.z); break;
         default: break;
       }
       if (use) {
@@ -226,7 +227,7 @@ export class Bot {
     }
 
     if (this.fireCd > 0 || f.ammo < 1 || f.attackCd > 0) return;
-    const lob = atk.kind === 'lob', melee = atk.kind === 'melee';
+    const lob = atk.kind === 'lob', melee = atk.kind === 'melee' || atk.kind === 'dash';
     if (d > atk.range * (melee ? 0.85 : 0.93)) return;
     if (!lob && !w.shotClear(f.x, f.z, t.x, t.z)) return;
     const tt = lob ? atk.flight : melee ? 0 : d / atk.speed;

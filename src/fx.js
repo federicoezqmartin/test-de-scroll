@@ -1,5 +1,6 @@
 // Efectos: partículas, anillos, proyectiles y textos flotantes.
 import * as THREE from 'three';
+import { tex } from './assets.js';
 
 const MAX = 700;
 const tmpColor = new THREE.Color();
@@ -44,8 +45,6 @@ export class Fx {
       orb: keep(new THREE.IcosahedronGeometry(0.55, 2)),
       flask: keep(new THREE.SphereGeometry(0.2, 12, 10)),
       bigflask: keep(new THREE.SphereGeometry(0.32, 14, 12)),
-      core: keep(new THREE.IcosahedronGeometry(0.24, 0)),
-      cage: keep(new THREE.OctahedronGeometry(0.38, 0)),
       ring: keep(new THREE.RingGeometry(0.86, 1, 48).rotateX(-Math.PI / 2)),
       disc: keep(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2)),
     };
@@ -85,23 +84,25 @@ export class Fx {
     return g;
   }
 
+  // Núcleo: el ícono del arte como cartel que siempre mira a cámara, con resplandor.
   coreMesh() {
     const g = new THREE.Group();
     if (!this.coreMat) {
-      this.coreMat = new THREE.MeshStandardMaterial({ color: 0xe6ff6a, emissive: 0xc8ff3a, emissiveIntensity: 1.4, roughness: 0.3 });
-      this.cageMat = new THREE.MeshBasicMaterial({ color: 0x2b3a12, wireframe: true });
-      this.own.push(this.coreMat, this.cageMat);
+      this.coreMat = new THREE.SpriteMaterial({ map: tex('nucleo.webp'), transparent: true, toneMapped: false });
+      this.own.push(this.coreMat);
     }
-    const orb = new THREE.Mesh(this.geos.core, this.coreMat);
-    orb.castShadow = true;
-    g.add(orb, new THREE.Mesh(this.geos.cage, this.cageMat), this.haloSprite(0xc8ff3a, 1.5));
+    g.add(this.haloSprite(0xa8ff3a, 1.7));
+    const s = new THREE.Sprite(this.coreMat);
+    s.scale.set(0.7, 0.8, 1);
+    g.add(s);
+    g.userData.sprite = s;
     this.scene.add(g);
     return g;
   }
 
   remove(obj) {
     this.scene.remove(obj);
-    obj.traverse?.((o) => { if (o.isSprite) o.material.dispose(); });
+    obj.traverse?.((o) => { if (o.isSprite && o.material !== this.coreMat) o.material.dispose(); });
   }
 
   burst(x, y, z, o = {}) {

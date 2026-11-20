@@ -31,7 +31,7 @@ const ZONE_COLOR = { stars: 0xa98bff, toxic: 0x8dff4a };
 const ENEMY_COLOR = 0xff3355;
 
 export class Match {
-  constructor({ heroId, input, hud, layer, onEnd, lowQuality = false }) {
+  constructor({ heroId, input, hud, layer, onEnd, env = null, lowQuality = false }) {
     this.input = input;
     this.hud = hud;
     this.onEnd = onEnd;
@@ -49,8 +49,12 @@ export class Match {
     this.vh = 1;
 
     const scene = (this.scene = new THREE.Scene());
-    scene.background = new THREE.Color(0x1b5a7c);
-    scene.fog = new THREE.Fog(0x1b5a7c, 70, 150);
+    scene.background = new THREE.Color(0x0f6f86);
+    scene.fog = new THREE.Fog(0x0f6f86, 70, 150);
+    if (env) {
+      scene.environment = env;
+      scene.environmentIntensity = 0.55;
+    }
     this.camera = new THREE.PerspectiveCamera(36, 1, 1, 240);
     this.camT = new THREE.Vector3();
     this.camDist = 17;
@@ -58,8 +62,8 @@ export class Match {
     this.limZ0 = -10;
     this.limZ1 = 10;
 
-    scene.add(new THREE.HemisphereLight(0xe2f2ff, 0xb39768, 1.3));
-    const sun = (this.sun = new THREE.DirectionalLight(0xfff1d8, 2.5));
+    scene.add(new THREE.HemisphereLight(0xdcefff, 0xb08d5c, 0.95));
+    const sun = (this.sun = new THREE.DirectionalLight(0xffe2b8, 2.9));
     sun.castShadow = true;
     const q = lowQuality ? 1024 : 2048;
     sun.shadow.mapSize.set(q, q);
@@ -111,7 +115,7 @@ export class Match {
       x: sp.x, z: sp.z, airY: 0, kx: 0, kz: 0, mvx: 0, mvz: 0, velx: 0, velz: 0,
       hp: def.hp, maxHp: def.hp, ammo: RULES.ammoMax, attackCd: 0, super: 0, superTold: false,
       alive: true, respawnT: 0, shieldT: 0, revealT: 0, aimHold: 0, aim: dir, moveAng: dir, face: dir,
-      moveAmt: 0, phase: 0, kick: 0, punch: 0, pop: 1, lastHurtT: -99, lastActT: -99,
+      moveAmt: 0, phase: 0, kick: 0, punch: 0, pop: 1, ghost: false, lastHurtT: -99, lastActT: -99,
       inBush: false, visTo: [true, true], cores: 0, action: null, queue: [], rig, bot: null,
       stats: { kills: 0, deaths: 0, dmg: 0, cores: 0 },
     };
@@ -314,6 +318,10 @@ export class Match {
         this.indRect.visible = true;
         this.indRect.scale.set(s.width, 1, Math.max(0.3, this.dashLength(p, a.x, a.z, s.range)));
         break;
+      case 'line':
+        this.indRect.visible = true;
+        this.indRect.scale.set(s.width, 1, Math.max(1, this.world.rayShot(p.x, p.z, a.x, a.z, s.range)));
+        break;
       default: {
         const d = clamp(a.dist, 1.2, s.range);
         this.indDisc.visible = true;
@@ -398,11 +406,13 @@ export class Match {
         const d = clamp(dist, 1.5, s.range);
         const t = this.world.nearestFree(f.x + dx * d, f.z + dz * d, R);
         f.action = { type: 'leap', t: 0, dur: s.dur, fx: f.x, fz: f.z, tx: t.x, tz: t.z, spec: s };
+        f.ghost = true;
         break;
       }
       case 'dash': {
         const d = this.dashLength(f, dx, dz, s.range);
         f.action = { type: 'dash', t: 0, dur: s.dur, fx: f.x, fz: f.z, tx: f.x + dx * d, tz: f.z + dz * d, spec: s, hit: new Set() };
+        f.ghost = !s.vuln;
         break;
       }
       case 'zone': {
@@ -411,9 +421,9 @@ export class Match {
         this.addZone(t.x, t.z, s, f);
         break;
       }
+      case 'line': this.lineHit(f, s, dx, dz); break;
       default: break;
     }
-    void isSuper;
   }
 
   clampToArena(x, z) {
@@ -425,6 +435,35 @@ export class Match {
     let d = 0;
     while (d + 0.2 <= range && this.world.circleFree(f.x + dx * (d + 0.2), f.z + dz * (d + 0.2), R)) d += 0.2;
     return d;
+  }
+
+  // Golpe en línea (la zanja): daña todo lo que haya en el rectángulo y cura al que pega.
+  lineHit(f, s, dx, dz) {
+    const len = Math.max(1, this.world.rayShot(f.x, f.z, dx, dz, s.range));
+    let dealt = 0;
+    for (const e of this.fighters) {
+      if (e.team === f.team || !e.alive || e.ghost) continue;
+      const rx = e.x - f.x, rz = e.z - f.z;
+      const along = rx * dx + rz * dz, side = Math.abs(rx * dz - rz * dx);
+      if (along < -0.3 || along > len + R || side > s.width / 2 + R) continue;
+      const before = e.hp;
+      this.damage(e, s.dmg, f, { kx: dx * s.knock, kz: dz * s.knock });
+      dealt += before - Math.max(0, e.hp);
+    }
+    if (dealt > 0 && s.heal) {
+      const h = Math.round(Math.min(f.maxHp - f.hp, dealt * s.heal));
+      f.hp += h;
+      if (h > 0 && (f.team === ME || f.visTo[ME])) this.fx.text(f.x, f.rig.height + 0.6, f.z, '+' + h, 'heal');
+    }
+    if (f.team === ME || f.visTo[ME]) {
+      for (let d = 0.5; d < len; d += 0.45) {
+        const x = f.x + dx * d, z = f.z + dz * d;
+        this.fx.burst(x, 0.15, z, { n: 5, color: [0x6b4a2a, 0x9a6e3c, 0xd9b46a, 0x3a2a1c], speed: 2.6, up: 4.5, life: 0.55, size: 0.15, spread: s.width * 0.3 });
+        if (Math.round(d / 0.45) % 3 === 0) this.fx.ring(x, z, 0.2, s.width * 0.6, 0x3a2a1c, 0.5, true);
+      }
+    }
+    const cd = Math.hypot(f.x - this.camT.x, f.z - this.camT.z);
+    this.shake = Math.max(this.shake, clamp(0.5 - cd / 20, 0, 0.5));
   }
 
   spawnShot(f, s, ang, repeat) {
@@ -451,7 +490,7 @@ export class Match {
     const ang = f.aim + (i % 2 ? 0.25 : -0.25);
     if (f.team === ME || f.visTo[ME]) this.fx.slash(f.x, f.z, ang, s.arc, s.range, f.team === ME ? 0xdff6ff : 0xff8a9a);
     for (const e of this.fighters) {
-      if (e.team === f.team || !e.alive || e.action) continue;
+      if (e.team === f.team || !e.alive || e.ghost) continue;
       const dx = e.x - f.x, dz = e.z - f.z, d = Math.hypot(dx, dz);
       if (d > s.range + R * 0.6) continue;
       if (d > 0.5 && Math.abs(angDiff(Math.atan2(dx, dz), f.aim)) > (s.arc * DEG) / 2 + 0.15) continue;
@@ -462,7 +501,7 @@ export class Match {
 
   aoe(x, z, radius, dmg, src, knock = 0) {
     for (const e of this.fighters) {
-      if (e.team === src.team || !e.alive || e.action) continue;
+      if (e.team === src.team || !e.alive || e.ghost) continue;
       const dx = e.x - x, dz = e.z - z, d = Math.hypot(dx, dz);
       if (d > radius + R * 0.5) continue;
       this.damage(e, dmg, src, knock ? { kx: (dx / (d || 1)) * knock, kz: (dz / (d || 1)) * knock } : null);
@@ -505,6 +544,7 @@ export class Match {
     e.hp = 0;
     e.respawnT = RULES.respawn;
     e.action = null;
+    e.ghost = false;
     e.airY = 0;
     e.queue.length = 0;
     e.kx = e.kz = 0;
@@ -608,6 +648,7 @@ export class Match {
       f.airY = Math.sin(u * Math.PI) * 3.4;
       if (u >= 1) {
         f.action = null;
+        f.ghost = false;
         f.airY = 0;
         this.aoe(f.x, f.z, s.aoe, s.dmg, f, s.knock);
         this.fx.ring(f.x, f.z, 0.4, s.aoe, 0xff8a2a, 0.45);
@@ -618,9 +659,9 @@ export class Match {
         this.shake = Math.max(this.shake, clamp(0.6 - d / 20, 0, 0.6));
       }
     } else {
-      if (seen) this.fx.burst(f.x, 0.8, f.z, { n: 2, color: [0xdff6ff, 0xff3f6c], speed: 1, up: 0.5, life: 0.25, size: 0.13, grav: 0 });
+      if (seen) this.fx.burst(f.x, 0.8, f.z, { n: 2, color: [0xdff6ff, f.def.color], speed: 1, up: 0.5, life: 0.25, size: 0.13, grav: 0 });
       for (const e of this.fighters) {
-        if (e.team === f.team || !e.alive || e.action || a.hit.has(e)) continue;
+        if (e.team === f.team || !e.alive || e.ghost || a.hit.has(e)) continue;
         if (Math.hypot(e.x - f.x, e.z - f.z) < s.width) {
           a.hit.add(e);
           this.damage(e, s.dmg, f, null);
@@ -628,6 +669,7 @@ export class Match {
       }
       if (u >= 1) {
         f.action = null;
+        f.ghost = false;
         this.world.resolve(f, R);
       }
     }
@@ -662,7 +704,7 @@ export class Match {
           break;
         }
         for (const e of this.fighters) {
-          if (e.team === p.team || !e.alive || e.action || p.hit.has(e)) continue;
+          if (e.team === p.team || !e.alive || e.ghost || p.hit.has(e)) continue;
           const dx = e.x - p.x, dz = e.z - p.z, rr = p.r + R;
           if (dx * dx + dz * dz > rr * rr) continue;
           p.hit.add(e);
@@ -801,7 +843,7 @@ export class Match {
         let taker = null;
         if (this.state === 'play')
           for (const f of this.fighters) {
-            if (!f.alive || f.action) continue;
+            if (!f.alive || f.ghost) continue;
             if (Math.hypot(f.x - c.x, f.z - c.z) < 0.85) { taker = f; break; }
           }
         if (taker) {
@@ -868,7 +910,7 @@ export class Match {
       const seen = f.alive && (f.team === ME || f.visTo[ME]);
       const root = f.rig.root;
       root.visible = seen;
-      f.ring.visible = seen && !f.action;
+      f.ring.visible = seen && !f.ghost;
       if (seen) {
         if (f.inBush) occupied.push(f);
         root.position.set(f.x, f.airY, f.z);
