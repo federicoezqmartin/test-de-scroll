@@ -57,6 +57,7 @@ export class World {
     this.reactor = { x: 0, z: 0 };
 
     // Costo extra para caminar pegado a obstáculos (los bots doblan más abierto).
+    this.version = 0; // sube cada vez que cambia el mapa (cajón roto, pasto cortado)
     this.cost = new Float32Array(this.W * this.H);
     this.updateCost(0, 0, this.W - 1, this.H - 1);
 
@@ -83,6 +84,7 @@ export class World {
     k.hp -= amount;
     if (k.hp > 0) return 'hit';
     this.grid[r * this.W + c] = T.FLOOR;
+    this.version++;
     const hide = this.hideMatrix;
     this.crateMesh.setMatrixAt(k.n, hide);
     this.crateMesh.instanceMatrix.needsUpdate = true;
@@ -97,6 +99,7 @@ export class World {
     const start = this.bushStart.get(r * this.W + c);
     if (start === undefined || this.type(c, r) !== T.BUSH) return false;
     this.grid[r * this.W + c] = T.FLOOR;
+    this.version++;
     for (let k = 0; k < this.bushPer; k++) this.bushMesh.setMatrixAt(start + k, this.hideMatrix);
     this.bushMesh.instanceMatrix.needsUpdate = true;
     return true;

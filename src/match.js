@@ -1,6 +1,6 @@
 // Una partida 3 contra 3: luchadores, combate, núcleos, reglas, cámara.
 import * as THREE from 'three';
-import { HEROES, RULES, TEAMS, BOT_NAMES, heroById } from './data.js';
+import { HEROES, RULES, TEAMS, BOT_NAMES, heroById, applyTeamPalette } from './data.js';
 import { buildHero, animateRig, disposeRig } from './models.js';
 import { World } from './world.js';
 import { Fx } from './fx.js';
@@ -8,6 +8,7 @@ import { audio } from './audio.js';
 import { Bot } from './ai.js';
 import { shaderTime, grassFighters, grassShocks, shieldMaterial, zoneMaterial, indicatorMaterial } from './shaders.js';
 import { Debris } from './physics.js';
+import { SKILL, TEAM_PALETTES } from './settings.js';
 
 const R = 0.4; // radio de un luchador
 const DEG = Math.PI / 180;
@@ -30,7 +31,6 @@ const shuffle = (a) => {
 
 const SHOT_COLOR = { bolt: 0xffc23a, ember: 0xff8a2a, dart: 0x7df9ff, orb: 0x39e6ff, flask: 0xff6fd0, bigflask: 0x9dff3a };
 const ZONE_COLOR = { stars: 0xa98bff, toxic: 0x8dff4a };
-const ENEMY_COLOR = 0xff3355;
 const UP = new THREE.Vector3(0, 1, 0);
 const WOOD = [0xa9743c, 0x8a5526, 0xc98d4b, 0x6e4420];
 const BLOOD = [0x8a0a0a, 0xb01010, 0x5e0505];
@@ -39,8 +39,13 @@ const qA = new THREE.Quaternion(), qB = new THREE.Quaternion(), vAxis = new THRE
 const DEFAULT_Q = { shadow: 2048, shadowRadius: 2.4, lights: 0, boost: 1, fxScale: 1 };
 
 export class Match {
-  constructor({ heroId, input, hud, layer, onEnd, env = null, quality = null, gore = true }) {
-    this.gore = gore; // sangre y manchas; apagado, los golpes sueltan chispas blancas
+  constructor({ heroId, input, hud, layer, onEnd, env = null, quality = null, settings = {} }) {
+    // Lo que se fija al empezar: colores de equipo, dificultad y nombre. El resto se puede cambiar en plena partida.
+    applyTeamPalette(TEAM_PALETTES[settings.teamColors] || TEAM_PALETTES.clasico);
+    this.skill = SKILL[settings.difficulty] || SKILL.normal;
+    this.applySettings(settings);
+    this.streak = 0;
+    this.streakT = -99;
     const q = (this.q = quality || DEFAULT_Q);
     this.hitStop = 0;
     this.zoomKick = 0;
@@ -126,7 +131,8 @@ export class Match {
     const foes = shuffle(HEROES.map((h) => h.id)).slice(0, 3);
     const names = shuffle([...BOT_NAMES]);
     const lanes = [0, -1, 1];
-    [heroId, others[0], others[1]].forEach((id, i) => this.addFighter(ME, i, id, i === 0, i === 0 ? 'Vos' : names.pop(), lanes[i]));
+    const me = String(settings.playerName || 'Vos');
+    [heroId, others[0], others[1]].forEach((id, i) => this.addFighter(ME, i, id, i === 0, i === 0 ? me : names.pop(), lanes[i]));
     foes.forEach((id, i) => this.addFighter(1, i, id, false, names.pop(), lanes[i]));
     this.player = this.fighters[0];
     this.camT.set(this.player.x, 0, this.player.z);
@@ -142,6 +148,14 @@ export class Match {
   }
 
   keep(o) { this.own.push(o); return o; }
+
+  // Opciones que se pueden cambiar con la partida en marcha.
+  applySettings(s) {
+    this.gore = s.gore !== false; // sangre y manchas; apagado, los golpes sueltan chispas blancas
+    this.shakeScale = s.shake ?? 1;
+    this.zoomUser = s.zoom ?? 1;
+    this.showNumbers = s.dmgNumbers !== false;
+  }
 
   addFighter(team, slot, heroId, isPlayer, name, lane) {
     const def = heroById(heroId);
@@ -448,7 +462,7 @@ export class Match {
       case 'lob': {
         const d = clamp(dist, 1.2, s.range);
         const t = this.clampToArena(f.x + dx * d, f.z + dz * d);
-        const color = f.team === ME ? SHOT_COLOR[s.visual] : ENEMY_COLOR;
+        const color = f.team === ME ? SHOT_COLOR[s.visual] : TEAMS[1].shot;
         const mesh = this.fx.projectile(s.visual, color);
         mesh.position.set(f.x, 1, f.z);
         const mark = new THREE.Mesh(this.fx.geos.disc, zoneMaterial(color, 'warn'));
@@ -539,7 +553,7 @@ export class Match {
     if (!f.alive) return;
     if (repeat) this.sfx(s.sfx, f, 0.8);
     const dx = Math.sin(ang), dz = Math.cos(ang);
-    const color = f.team === ME ? SHOT_COLOR[s.visual] : ENEMY_COLOR;
+    const color = f.team === ME ? SHOT_COLOR[s.visual] : TEAMS[1].shot;
     const mesh = this.fx.projectile(s.visual, color);
     const x = f.x + dx * 0.55, z = f.z + dz * 0.55;
     mesh.position.set(x, 0.8, z);
@@ -614,13 +628,14 @@ export class Match {
     const seen = e.team === ME || e.visTo[ME];
     if (seen) {
       const cls = e.isPlayer ? 'hurt' : src && src.isPlayer ? 'mine' : e.team === ME ? 'ally' : '';
-      this.fx.text(e.x, e.rig.height + 0.5 + e.airY, e.z, String(amt), cls);
+      if (this.showNumbers) this.fx.text(e.x, e.rig.height + 0.5 + e.airY, e.z, String(amt), cls);
       this.bleed(e, amt, hx, hz);
     }
     if (e.isPlayer) {
       audio.play('hurt');
       this.shake = Math.max(this.shake, 0.22);
       this.hud.hurt();
+      if (hl > 0.01) this.hud.hitFrom(hx, hz);
     } else if (src && src.isPlayer) audio.play('hit');
     else this.sfx('hit', e, 0.5);
     if (e.hp <= 0) this.kill(e, src);
@@ -649,11 +664,16 @@ export class Match {
     this.fx.flash(e.x, 1.2, e.z, TEAMS[e.team].color, 40, 0.4);
     this.die(e);
     if (e.isPlayer || (src && src.isPlayer)) this.hitStop = 0.07;
+    if (src && src.isPlayer && src !== e) {
+      this.streak = this.time - this.streakT < 6 ? this.streak + 1 : 1;
+      this.streakT = this.time;
+      if (this.streak >= 2) this.hud.big(['¡Doble baja!', '¡Triple baja!', '¡Imparable!'][Math.min(this.streak, 4) - 2], 'streak');
+    }
     this.sfx('death', e);
     this.hud.feed(src || null, e);
     if (e.isPlayer) {
       this.shake = 0.6;
-      this.hud.setRespawn(Math.ceil(e.respawnT));
+      this.hud.setRespawn(Math.ceil(e.respawnT), src && src !== e ? src : null);
     }
   }
 
@@ -1020,7 +1040,7 @@ export class Match {
   }
 
   addZone(x, z, s, owner) {
-    const color = owner.team === ME ? ZONE_COLOR[s.visual] : ENEMY_COLOR;
+    const color = owner.team === ME ? ZONE_COLOR[s.visual] : TEAMS[1].shot;
     const mat = zoneMaterial(color, s.visual);
     const g = new THREE.Mesh(this.fx.geos.disc, mat);
     g.position.set(x, 0.045, z);
@@ -1158,7 +1178,7 @@ export class Match {
     this.hud.big(won ? '¡Victoria!' : 'Derrota', won ? 'win' : 'lose');
     audio.play(won ? 'win' : 'lose');
     this.result = {
-      won, winner, score: this.score,
+      won, winner, score: this.score, time: this.time,
       fighters: this.fighters.map((f) => ({
         name: f.name, hero: f.def.id, heroName: f.def.name, team: f.team, isPlayer: f.isPlayer, ...f.stats,
       })),
@@ -1211,9 +1231,9 @@ export class Match {
     this.camT.z += (tz - this.camT.z) * a;
     this.zoom += ((this.state === 'intro' ? 1.25 : 1) - this.zoom) * (1 - Math.exp(-rawDt * 2.5));
     this.shake = Math.max(0, this.shake - rawDt * 2.2);
-    const sh = this.shake * this.shake * 1.6;
+    const sh = this.shake * this.shake * 1.6 * this.shakeScale;
     this.zoomKick = Math.max(0, this.zoomKick - rawDt * 3.2);
-    const d = this.camDist * this.zoom * (1 - 0.05 * Math.sin(this.zoomKick * Math.PI));
+    const d = this.camDist * this.zoom * this.zoomUser * (1 - 0.05 * Math.sin(this.zoomKick * Math.PI));
     this.camera.position.set(
       this.camT.x + (Math.random() - 0.5) * sh,
       d * 0.85 + (Math.random() - 0.5) * sh,
@@ -1238,7 +1258,10 @@ export class Match {
       f.tag.place((v.x * 0.5 + 0.5) * this.vw, (-v.y * 0.5 + 0.5) * this.vh, v.z < 1);
       f.tag.sync(f);
     }
+    v.set(p.x, 0.9, p.z).project(this.camera);
+    this.hud.anchor((v.x * 0.5 + 0.5) * this.vw, (-v.y * 0.5 + 0.5) * this.vh);
     this.hud.setSuper(p.super);
+    this.hud.frame(this, rawDt);
     w.update(this.time);
     this.ambient(dt);
     this.fx.update(dt, this.camera, this.vw, this.vh);

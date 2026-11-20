@@ -9,6 +9,7 @@ export class Input {
   constructor({ canvas, stick, btnAttack, btnSuper, onPause }) {
     this.enabled = false;
     this.touch = false;
+    this.lefty = false; // modo zurdo: la palanca va en la mitad derecha
     this.move = { x: 0, z: 0 };
     this.ndc = { x: 0, y: -0.2 };
     this.fire = false;
@@ -110,7 +111,7 @@ export class Input {
       const kind = el?.closest?.('#btn-attack') ? 'attack' : el?.closest?.('#btn-super') ? 'super' : null;
       if (kind) {
         if (!this.t[kind]) this.t[kind] = { id: t.identifier, sx: t.clientX, sy: t.clientY };
-      } else if (!this.t.move && t.clientX < window.innerWidth * 0.55) {
+      } else if (!this.t.move && (this.lefty ? t.clientX > window.innerWidth * 0.45 : t.clientX < window.innerWidth * 0.55)) {
         this.t.move = { id: t.identifier, sx: t.clientX, sy: t.clientY };
         this.stick.style.left = t.clientX + 'px';
         this.stick.style.top = t.clientY + 'px';

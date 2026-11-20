@@ -45,27 +45,38 @@
         <p class="goal">Juntá <b>10 núcleos</b> con tu equipo y aguantá <b>15 segundos</b>. Si te eliminan, se te caen todos.</p>
         <button id="play" class="btn big" type="button">¡A la arena!</button>
         <p class="keys" id="keys-hint"></p>
-        <div class="chips">
-          <button id="btn-quality" class="chip-btn" type="button">Gráficos: <b class="q-label"></b></button>
-          <button id="btn-gore" class="chip-btn" type="button">Sangre: <b class="g-label"></b></button>
-        </div>
+        <button id="btn-settings" class="chip-btn" type="button">Configuración</button>
       </div>
     </section>
 
     <section id="hud" hidden>
-      <div class="score" aria-live="off">
-        <div class="side blue"><i class="hex"></i><b id="score-0">0</b><span class="bar"><i id="bar-0"></i></span></div>
-        <div class="goal-n">10</div>
-        <div class="side red"><span class="bar"><i id="bar-1"></i></span><b id="score-1">0</b><i class="hex"></i></div>
+      <div class="score hud-box" aria-live="off">
+        <div class="side blue"><i class="hex"></i><b id="score-0">0</b><span class="pips" id="pips-0"></span></div>
+        <div class="mid"><span class="goal-n">10</span><span id="clock">0:00</span></div>
+        <div class="side red"><span class="pips" id="pips-1"></span><b id="score-1">0</b><i class="hex"></i></div>
       </div>
       <div id="banner" hidden></div>
       <div id="big"></div>
+      <div id="team-0" class="team" aria-label="Tu equipo"></div>
+      <div id="team-1" class="team" aria-label="Rivales"></div>
       <div id="feed"></div>
       <div class="topbtns">
-        <button id="btn-pause" type="button" aria-label="Pausa"><i class="ic-pause"></i></button>
-        <button id="btn-mute" type="button" aria-label="Sonido"><i class="ic-sound"></i></button>
+        <span id="fps" hidden></span>
+        <button id="btn-pause" class="hud-box" type="button" aria-label="Pausa"><i class="ic-pause"></i></button>
+        <button id="btn-mute" class="hud-box" type="button" aria-label="Sonido"><i class="ic-sound"></i></button>
+        <button id="btn-gear" class="hud-box" type="button" aria-label="Configuración"><i class="ic-gear"></i></button>
       </div>
-      <div id="super-meter"><span>Súper</span><div class="track"><i></i></div><kbd>Espacio</kbd></div>
+      <div id="me" class="hud-box">
+        <img id="me-img" alt="" />
+        <div class="me-body">
+          <div class="me-top"><b id="me-name"></b><small id="me-hero"></small><span id="me-cores" class="tag-cores" hidden></span></div>
+          <div class="me-hp" id="me-hp"><i id="me-hp-fill"></i><b id="me-hp-num"></b></div>
+          <div class="me-ammo" id="me-ammo"></div>
+        </div>
+      </div>
+      <canvas id="minimap" class="hud-box" aria-hidden="true"></canvas>
+      <div id="super-meter" class="hud-box"><span id="super-name">Súper</span><div class="track"><i></i></div><kbd>Espacio</kbd></div>
+      <div id="hitdir" aria-hidden="true"></div>
       <div id="respawn" hidden></div>
       <div id="toast" hidden></div>
       <div id="vignette"></div>
@@ -75,15 +86,26 @@
     </section>
 
     <section id="pause" class="overlay" hidden>
-      <div class="panel modal">
+      <div class="panel modal wide">
         <h2>Pausa</h2>
+        <div id="pause-table" class="res-table"></div>
         <p class="keys" id="pause-hint"></p>
-        <div class="chips">
-          <button id="btn-quality-2" class="chip-btn" type="button">Gráficos: <b class="q-label"></b></button>
-          <button id="btn-gore-2" class="chip-btn" type="button">Sangre: <b class="g-label"></b></button>
+        <div class="row">
+          <button id="resume" class="btn" type="button">Seguir jugando</button>
+          <button id="btn-settings-2" class="btn ghost" type="button">Configuración</button>
+          <button id="quit" class="btn ghost" type="button">Salir al menú</button>
         </div>
-        <button id="resume" class="btn" type="button">Seguir jugando</button>
-        <button id="quit" class="btn ghost" type="button">Salir al menú</button>
+      </div>
+    </section>
+
+    <section id="settings" class="overlay" hidden>
+      <div class="panel modal settings" role="dialog" aria-labelledby="settings-title">
+        <h2 id="settings-title">Configuración</h2>
+        <div id="settings-body"></div>
+        <div class="row">
+          <button id="settings-reset" class="btn ghost" type="button">Restablecer</button>
+          <button id="settings-done" class="btn" type="button">Listo</button>
+        </div>
       </div>
     </section>
 
@@ -91,7 +113,7 @@
       <div class="panel modal wide">
         <h2 id="res-title"></h2>
         <p id="res-sub"></p>
-        <div id="res-table"></div>
+        <div id="res-table" class="res-table"></div>
         <div class="row">
           <button id="again" class="btn" type="button">Revancha</button>
           <button id="change" class="btn ghost" type="button">Cambiar personaje</button>

@@ -1,6 +1,7 @@
-// Interfaz en DOM: menú, HUD de partida, pausa y resultados.
+// Interfaz en DOM: menú, HUD de partida, pausa, configuración y resultados.
 import { HEROES, RULES, TEAMS, heroById } from './data.js';
 import { artUrl } from './assets.js';
+import { settings, SECTIONS, setSetting, resetSettings, TEAM_PALETTES } from './settings.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -9,6 +10,10 @@ const el = (tag, cls, text) => {
   if (text != null) e.textContent = text;
   return e;
 };
+const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+// Colores del minimapa por tipo de baldosa (ver T en world.js).
+const MAP_COLORS = { 1: '#7d93a6', 2: '#b9793f', 3: '#2bb3d0', 4: '#3f9a34', 5: '#c8ff3a' };
 
 export class UI {
   constructor() {
@@ -20,11 +25,26 @@ export class UI {
     try {
       const saved = localStorage.getItem('trifulca-hero');
       if (saved && HEROES.some((h) => h.id === saved)) this.selected = saved;
-    } catch { /* sin storage */ }
+    } catch { /* sin almacenamiento */ }
     this.onSelect = () => {};
+    this.onSettingsClose = () => {};
     this.portraits = {};
     this.bigT = 0;
-    this.last = { s0: -1, s1: -1, sup: -1, resp: null };
+    this.hs = 1;
+    this.last = {};
+    this.team = [];
+    this.buildSettings();
+    for (let t = 0; t < 2; t++) {
+      const p = $('pips-' + t);
+      for (let i = 0; i < RULES.goal; i++) p.append(el('i'));
+    }
+    const ammo = $('me-ammo');
+    for (let i = 0; i < RULES.ammoMax; i++) {
+      const seg = el('i');
+      seg.append(el('u'));
+      ammo.append(seg);
+    }
+    this.applySettings();
   }
 
   // ----------------------------------------------------------------- menú --
@@ -51,7 +71,7 @@ export class UI {
 
   select(id, byUser) {
     this.selected = id;
-    try { localStorage.setItem('trifulca-hero', id); } catch { /* sin storage */ }
+    try { localStorage.setItem('trifulca-hero', id); } catch { /* sin almacenamiento */ }
     const h = heroById(id);
     for (const b of document.querySelectorAll('.hero-btn')) {
       const on = b.dataset.id === id;
@@ -81,7 +101,7 @@ export class UI {
 
   setHints(touch) {
     const t = touch
-      ? 'Palanca izquierda: moverte · Botón rojo: tocá para disparar solo o arrastrá para apuntar'
+      ? 'Palanca: moverte · Botón de ataque: tocá para disparar solo o arrastrá para apuntar'
       : 'WASD: moverte · Mouse: apuntar · Clic: disparar · Espacio o clic derecho: súper · Esc: pausa';
     $('keys-hint').textContent = t;
     $('pause-hint').textContent = t;
@@ -92,13 +112,13 @@ export class UI {
     this.hud.hidden = name !== 'match';
     $('results').hidden = name !== 'results';
     $('pause').hidden = true;
+    $('settings').hidden = true;
     document.body.dataset.screen = name;
   }
 
-  setPaused(p) { $('pause').hidden = !p; }
-
-  setQuality(label) {
-    for (const b of document.querySelectorAll('.q-label')) b.textContent = label;
+  setPaused(p, match) {
+    $('pause').hidden = !p;
+    if (p && match) this.statsTable($('pause-table'), match.fighters.map((f) => ({ name: f.name, hero: f.def.id, heroName: f.def.name, team: f.team, isPlayer: f.isPlayer, ...f.stats })));
   }
 
   toast(text) {
@@ -109,8 +129,260 @@ export class UI {
     this.toastT = setTimeout(() => { t.hidden = true; }, 5000);
   }
 
+  // -------------------------------------------------------- configuración --
+  // Dibuja un control por cada entrada de SECTIONS; cada uno guarda su valor al tocarlo.
+  buildSettings() {
+    const body = $('settings-body');
+    this.setRefresh = [];
+    for (const sec of SECTIONS) {
+      body.append(el('h3', 'set-sec', sec.title));
+      for (const it of sec.items) {
+        const row = el('div', 'set-row');
+        const id = 'set-' + it.k;
+        const ctl = el('div', 'set-ctl');
+        if (it.type === 'seg') {
+          row.append(el('span', 'lbl', it.label));
+          const seg = el('div', 'seg');
+          seg.setAttribute('role', 'group');
+          seg.setAttribute('aria-label', it.label);
+          for (const [v, text] of it.opts) {
+            const b = el('button', '', text);
+            b.type = 'button';
+            b.addEventListener('click', () => setSetting(it.k, v));
+            seg.append(b);
+            this.setRefresh.push(() => b.setAttribute('aria-pressed', String(settings[it.k] === v)));
+          }
+          ctl.append(seg);
+        } else if (it.type === 'toggle') {
+          const b = el('button', 'sw');
+          b.type = 'button';
+          b.id = id;
+          b.setAttribute('role', 'switch');
+          b.setAttribute('aria-label', it.label);
+          b.addEventListener('click', () => setSetting(it.k, !settings[it.k]));
+          row.append(el('span', 'lbl', it.label));
+          ctl.append(b);
+          this.setRefresh.push(() => b.setAttribute('aria-checked', String(!!settings[it.k])));
+        } else if (it.type === 'range') {
+          const lab = el('label', '', it.label);
+          lab.htmlFor = id;
+          const inp = el('input');
+          Object.assign(inp, { type: 'range', id, min: it.min, max: it.max, step: it.step });
+          const out = el('output');
+          inp.addEventListener('input', () => setSetting(it.k, Number(inp.value)));
+          row.append(lab);
+          ctl.append(inp, out);
+          this.setRefresh.push(() => { inp.value = settings[it.k]; out.textContent = it.fmt(settings[it.k]); });
+        } else {
+          const lab = el('label', '', it.label);
+          lab.htmlFor = id;
+          const inp = el('input');
+          Object.assign(inp, { type: 'text', id, maxLength: it.max, autocomplete: 'off', spellcheck: false });
+          inp.addEventListener('change', () => {
+            setSetting(it.k, inp.value.trim().slice(0, it.max) || 'Vos');
+            inp.value = settings[it.k];
+          });
+          row.append(lab);
+          ctl.append(inp);
+          this.setRefresh.push(() => { if (document.activeElement !== inp) inp.value = settings[it.k]; });
+        }
+        row.append(ctl);
+        if (it.note) row.append(el('p', 'note', it.note));
+        body.append(row);
+      }
+    }
+    $('settings-reset').addEventListener('click', () => resetSettings());
+    $('settings-done').addEventListener('click', () => this.closeSettings());
+  }
+
+  openSettings() {
+    for (const fn of this.setRefresh) fn();
+    $('pause').hidden = true;
+    $('settings').hidden = false;
+    $('settings-done').focus();
+  }
+
+  closeSettings() {
+    if ($('settings').hidden) return false;
+    document.activeElement?.blur?.(); // confirma el nombre si quedó a medio escribir
+    $('settings').hidden = true;
+    this.onSettingsClose();
+    return true;
+  }
+
+  get settingsOpen() { return !$('settings').hidden; }
+
+  // Lleva la configuración a la página: tamaños, colores de equipo y qué se muestra.
+  applySettings() {
+    const s = settings, root = document.documentElement.style, pal = TEAM_PALETTES[s.teamColors] || TEAM_PALETTES.clasico;
+    this.hs = s.hudScale;
+    root.setProperty('--hs', s.hudScale);
+    root.setProperty('--btn-scale', s.btnScale);
+    root.setProperty('--t0', pal[0].css);
+    root.setProperty('--t0l', pal[0].light);
+    root.setProperty('--t1', pal[1].css);
+    root.setProperty('--t1l', pal[1].light);
+    const c = document.body.classList;
+    c.toggle('no-names', !s.names);
+    c.toggle('no-minimap', !s.minimap);
+    c.toggle('no-teams', !s.teamPanels);
+    c.toggle('lefty', s.lefty);
+    $('fps').hidden = !s.fps;
+    $('btn-mute').classList.toggle('off', s.muted);
+    for (const fn of this.setRefresh) fn();
+    this.mapDirty = true;
+  }
+
   // ------------------------------------------------------------------ HUD --
+  // Arma lo que depende de quiénes juegan: tarjeta propia, paneles de equipo y minimapa.
+  bindMatch(match) {
+    const p = match.player;
+    this.last = {};
+    $('me-img').src = this.portraits[p.def.id] || '';
+    $('me-name').textContent = p.name;
+    $('me-hero').textContent = p.def.name;
+    $('super-name').textContent = p.def.super.name;
+    this.team = [];
+    for (let t = 0; t < 2; t++) $('team-' + t).textContent = '';
+    for (const f of match.fighters) {
+      if (f.isPlayer) continue;
+      const row = el('div', `tm hud-box t${f.team}`);
+      const img = el('img');
+      img.alt = '';
+      img.src = this.portraits[f.def.id] || '';
+      const body = el('div', 'tm-b');
+      const hp = el('div', 'tm-hp'), fill = el('i');
+      hp.append(fill);
+      body.append(el('span', 'tm-n', f.name), hp);
+      const cores = el('span', 'tm-c'), dead = el('span', 'tm-x');
+      row.append(img, body, cores, dead);
+      $('team-' + f.team).append(row);
+      this.team.push({ f, row, fill, cores, dead, hp: -1, c: -1, x: -1, seen: null });
+    }
+    // Minimapa: el fondo fijo se dibuja aparte y se rehace solo cuando cambia el mapa.
+    const w = match.world, cv = $('minimap');
+    const cell = document.body.classList.contains('touch') ? 4 : 6;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.style.width = w.W * cell + 'px';
+    cv.style.height = w.H * cell + 'px';
+    cv.width = Math.round(w.W * cell * dpr);
+    cv.height = Math.round(w.H * cell * dpr);
+    this.map = { ctx: cv.getContext('2d'), k: cell * dpr, bg: document.createElement('canvas'), ver: -1, t: 0 };
+    this.map.bg.width = cv.width;
+    this.map.bg.height = cv.height;
+    this.mapDirty = true;
+    this.hudT = 0;
+    this.clockN = -1;
+    this.setClock(0);
+  }
+
+  drawMapBackground(w) {
+    const m = this.map, g = m.bg.getContext('2d'), k = m.k;
+    g.clearRect(0, 0, m.bg.width, m.bg.height);
+    g.fillStyle = 'rgba(58, 46, 26, 0.92)';
+    g.fillRect(0, 0, m.bg.width, m.bg.height);
+    for (let r = 0; r < w.H; r++)
+      for (let c = 0; c < w.W; c++) {
+        const t = w.type(c, r);
+        if (!MAP_COLORS[t]) continue;
+        g.fillStyle = MAP_COLORS[t];
+        g.fillRect(Math.floor(c * k), Math.floor(r * k), Math.ceil(k), Math.ceil(k));
+      }
+    m.ver = w.version;
+    this.mapDirty = false;
+  }
+
+  drawMap(match) {
+    const m = this.map, w = match.world, g = m.ctx, k = m.k;
+    if (this.mapDirty || m.ver !== w.version) this.drawMapBackground(w);
+    g.drawImage(m.bg, 0, 0);
+    const pal = TEAM_PALETTES[settings.teamColors] || TEAM_PALETTES.clasico;
+    const dot = (x, z, r, color, ring) => {
+      g.beginPath();
+      g.arc((x + w.W / 2) * k, (z + w.H / 2) * k, r * k, 0, 6.3);
+      g.fillStyle = color;
+      g.fill();
+      if (ring) { g.lineWidth = k * 0.22; g.strokeStyle = ring; g.stroke(); }
+    };
+    for (const c of match.cores) if (c.landed) dot(c.x, c.z, 0.38, '#c8ff3a');
+    for (const f of match.fighters) {
+      if (!f.alive || f.isPlayer) continue;
+      if (f.team === 0) dot(f.x, f.z, 0.62, pal[0].css, '#06101e');
+      else if (f.visTo[0]) dot(f.x, f.z, 0.62, pal[1].css, '#06101e');
+    }
+    const p = match.player;
+    if (p.alive) dot(p.x, p.z, 0.78, '#ffd23f', '#1c1500');
+  }
+
+  // Una vez por cuadro, al final de la vista. Lo caro (paneles, minimapa) va más espaciado.
+  frame(match, dt) {
+    const p = match.player, L = this.last;
+    const hp = Math.ceil(p.hp);
+    if (hp !== L.hp) {
+      L.hp = hp;
+      $('me-hp-fill').style.width = (100 * hp) / p.maxHp + '%';
+      $('me-hp-num').textContent = `${hp} / ${p.maxHp}`;
+      $('me-hp').classList.toggle('low', hp < p.maxHp * 0.3);
+    }
+    const am = Math.round(p.ammo * 20);
+    if (am !== L.ammo) {
+      L.ammo = am;
+      const segs = $('me-ammo').children;
+      for (let i = 0; i < segs.length; i++) {
+        const v = Math.max(0, Math.min(1, p.ammo - i));
+        segs[i].firstChild.style.width = v * 100 + '%';
+        segs[i].classList.toggle('full', v >= 1);
+      }
+    }
+    if (p.cores !== L.cores) {
+      L.cores = p.cores;
+      $('me-cores').hidden = p.cores === 0;
+      $('me-cores').textContent = p.cores;
+    }
+    const sec = Math.floor(match.time);
+    if (sec !== this.clockN) this.setClock(sec);
+    this.hudT -= dt;
+    if (this.hudT > 0) return;
+    this.hudT = 0.12;
+    for (const t of this.team) {
+      const f = t.f, seen = f.team === 0 || f.visTo[0];
+      if (seen !== t.seen) { t.seen = seen; t.row.classList.toggle('unseen', !seen); }
+      // De un rival escondido se muestra lo último que se le vio.
+      if (seen || !f.alive) {
+        const hpF = f.alive ? Math.round((f.hp / f.maxHp) * 50) : 0;
+        if (hpF !== t.hp) { t.hp = hpF; t.fill.style.width = hpF * 2 + '%'; }
+        if (f.cores !== t.c) { t.c = f.cores; t.cores.textContent = f.cores || ''; }
+      }
+      const x = f.alive ? 0 : Math.max(1, Math.ceil(f.respawnT));
+      if (x !== t.x) { t.x = x; t.row.classList.toggle('dead', x > 0); t.dead.textContent = x || ''; }
+    }
+    if (settings.minimap) this.drawMap(match);
+  }
+
+  setClock(sec) {
+    this.clockN = sec;
+    $('clock').textContent = clock(sec);
+  }
+
+  setFps(n) { $('fps').textContent = n + ' fps'; }
+
+  // Posición en pantalla del jugador: ahí se centra el aviso de daño.
+  anchor(x, y) { $('hitdir').style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`; }
+
+  // dx, dz: dirección del mundo desde la que vino el golpe (hacia el jugador).
+  hitFrom(dx, dz) {
+    if (!settings.hitDir) return;
+    const box = $('hitdir');
+    while (box.children.length > 3) box.firstChild.remove();
+    const arc = el('i');
+    // el arco apunta arriba; el golpe viene del lado contrario al empujón
+    arc.style.transform = `rotate(${(Math.atan2(-dx, dz) * 180) / Math.PI}deg)`;
+    arc.addEventListener('animationend', () => arc.remove());
+    box.append(arc);
+  }
+
   makeTag(f) {
+    const ui = this;
     const root = el('div', `tag t${f.team}${f.isPlayer ? ' me' : ''}`);
     const name = el('div', 'tag-name', f.name);
     const hp = el('div', 'tag-hp');
@@ -136,7 +408,7 @@ export class UI {
     return {
       place(x, y, vis) {
         if (vis !== c.vis) { c.vis = vis; root.style.display = vis ? '' : 'none'; }
-        if (vis) root.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-100%)`;
+        if (vis) root.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-100%) scale(${ui.hs})`;
       },
       sync(g) {
         const h = Math.ceil(g.hp);
@@ -170,8 +442,18 @@ export class UI {
 
   setScore(a, b) {
     const L = this.last;
-    if (a !== L.s0) { L.s0 = a; $('score-0').textContent = a; $('bar-0').style.width = Math.min(100, (a / RULES.goal) * 100) + '%'; }
-    if (b !== L.s1) { L.s1 = b; $('score-1').textContent = b; $('bar-1').style.width = Math.min(100, (b / RULES.goal) * 100) + '%'; }
+    [a, b].forEach((v, t) => {
+      if (v === L['s' + t]) return;
+      const prev = L['s' + t] ?? 0;
+      L['s' + t] = v;
+      $('score-' + t).textContent = v;
+      const pips = $('pips-' + t).children;
+      for (let i = 0; i < pips.length; i++) {
+        pips[i].classList.toggle('on', i < v);
+        pips[i].classList.toggle('new', i < v && i >= prev);
+      }
+      setTimeout(() => { for (const p of pips) p.classList.remove('new'); }, 250);
+    });
   }
 
   setCountdown(team, n) {
@@ -189,14 +471,20 @@ export class UI {
     void b.offsetWidth; // reinicia la animación
     b.classList.add('show');
     clearTimeout(this.bigT);
-    if (cls !== 'win' && cls !== 'lose') this.bigT = setTimeout(() => b.classList.remove('show'), 900);
+    if (cls !== 'win' && cls !== 'lose') this.bigT = setTimeout(() => b.classList.remove('show'), cls === 'streak' ? 1300 : 900);
   }
 
   feed(killer, victim) {
     const f = $('feed');
     const row = el('div', 'feed-item');
-    if (killer) row.append(el('b', 't' + killer.team, killer.name), ' eliminó a ');
-    row.append(el('b', 't' + victim.team, victim.name));
+    const who = (g) => {
+      const img = el('img');
+      img.alt = '';
+      img.src = this.portraits[g.def.id] || '';
+      return [img, el('b', 't' + g.team, g.name)];
+    };
+    if (killer) row.append(...who(killer), el('span', 'vs'));
+    row.append(...who(victim));
     if (!killer) row.append(' cayó');
     f.prepend(row);
     while (f.children.length > 4) f.lastChild.remove();
@@ -212,22 +500,27 @@ export class UI {
     this.hud.classList.toggle('super-ready', v >= 100);
   }
 
-  setRespawn(n) {
+  // by: quién te eliminó (se pasa una vez, al morir).
+  setRespawn(n, by) {
+    if (by !== undefined) this.killer = by;
     if (n === this.last.resp) return;
     this.last.resp = n;
     const r = $('respawn');
     r.hidden = n == null;
-    if (n != null) r.textContent = `Reaparecés en ${n}`;
+    if (n == null) { this.killer = null; return; }
+    r.textContent = '';
+    if (this.killer) {
+      const line = el('small', '', 'Te eliminó ');
+      line.append(el('b', '', this.killer.name), ` (${this.killer.def.name})`);
+      r.append(line);
+    }
+    r.append(el('span', '', `Reaparecés en ${n}`));
   }
 
   setLowHp(on) {
     if (on === this.last.low) return;
     this.last.low = on;
     $('vignette').classList.toggle('low', on);
-  }
-
-  setGore(on) {
-    for (const b of document.querySelectorAll('.g-label')) b.textContent = on ? 'Sí' : 'No';
   }
 
   hurt() {
@@ -238,34 +531,45 @@ export class UI {
   }
 
   resetHud() {
-    this.last = { s0: -1, s1: -1, sup: -1, resp: undefined };
+    this.last = {};
+    this.team = [];
     $('feed').textContent = '';
+    $('hitdir').textContent = '';
     $('big').className = '';
     $('banner').hidden = true;
+    $('toast').hidden = true;
     $('vignette').classList.remove('low');
     this.layer.textContent = '';
   }
 
   // ------------------------------------------------------------ resultados --
-  showResults(res) {
-    $('res-title').textContent = res.won ? '¡Victoria!' : 'Derrota';
-    $('res-title').className = res.won ? 'win' : 'lose';
-    $('res-sub').textContent = `Núcleos: ${TEAMS[0].name} ${res.score[0]} · ${TEAMS[1].name} ${res.score[1]}`;
-    const t = $('res-table');
-    t.textContent = '';
+  // Tabla de luchadores con bajas, daño y núcleos; marca al mejor de la partida.
+  statsTable(box, rows) {
+    box.textContent = '';
     const head = el('div', 'res-row head');
     head.append(el('span', '', ''), el('span', '', 'Luchador'), el('span', 'n', 'Bajas'), el('span', 'n', 'Daño'), el('span', 'n', 'Núcleos'));
-    t.append(head);
-    for (const f of res.fighters) {
+    box.append(head);
+    const score = (f) => f.kills * 600 + f.dmg + f.cores * 400;
+    const best = rows.reduce((a, b) => (score(b) > score(a) ? b : a), rows[0]);
+    for (const f of rows) {
       const row = el('div', `res-row t${f.team}${f.isPlayer ? ' me' : ''}`);
       const img = el('img', heroById(f.hero).art ? 'art' : '');
       img.alt = '';
       if (this.portraits[f.hero]) img.src = this.portraits[f.hero];
       const who = el('span', 'who');
-      who.append(el('b', '', f.name), el('small', '', f.heroName));
+      const name = el('b', '', f.name);
+      if (f === best && score(f) > 0) name.append(el('span', 'mvp', 'MEJOR'));
+      who.append(name, el('small', '', f.heroName));
       row.append(img, who, el('span', 'n', f.kills), el('span', 'n', f.dmg.toLocaleString('es-AR')), el('span', 'n', f.cores));
-      t.append(row);
+      box.append(row);
     }
+  }
+
+  showResults(res) {
+    $('res-title').textContent = res.won ? '¡Victoria!' : 'Derrota';
+    $('res-title').className = res.won ? 'win' : 'lose';
+    $('res-sub').textContent = `Núcleos: ${TEAMS[0].name} ${res.score[0]} · ${TEAMS[1].name} ${res.score[1]} · Duración ${clock(res.time || 0)}`;
+    this.statsTable($('res-table'), res.fighters);
     this.show('results');
   }
 }

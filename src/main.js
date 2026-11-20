@@ -10,6 +10,7 @@ import { UI } from './ui.js';
 import { audio } from './audio.js';
 import { artUrl, preloadArt } from './assets.js';
 import { Gfx, QUALITY, QUALITY_ORDER } from './gfx.js';
+import { settings, setSetting, onSettings, autoLevel } from './settings.js';
 
 const canvas = document.getElementById('game');
 const coarse = matchMedia('(pointer: coarse)').matches;
@@ -33,19 +34,14 @@ const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 pmrem.dispose();
 preloadArt();
 
-// Calidad gráfica. Arranca en Alta (Media en táctiles); si la partida no llega a ~27 cuadros
-// por segundo baja sola un nivel. Elegirla a mano, o pasar ?q=alta|media|baja, apaga ese ajuste.
+// Calidad gráfica. En "Auto" arranca en Alta (Media en táctiles) y, si la partida no llega a
+// ~27 cuadros por segundo, baja sola un nivel. ?q=alta|media|baja fuerza un nivel por esta visita.
 const gfx = new Gfx(renderer);
-const store = {
-  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch { /* sin storage */ } },
-};
 const urlQ = new URLSearchParams(location.search).get('q');
-const manualQ = QUALITY[urlQ] ? urlQ : QUALITY[store.get('tuzanja-calidad')] ? store.get('tuzanja-calidad') : null;
-let autoQuality = !manualQ;
-let gore = store.get('tuzanja-sangre') !== '0'; // sangre y manchas; se apaga desde el menú o la pausa
+const forcedQ = QUALITY[urlQ] ? urlQ : null;
 let fpsFrames = 0, fpsTime = 0, fpsWarm = 0; // medición de cuadros por segundo (ver watchFps)
-let qualityName = manualQ || (QUALITY[store.get('tuzanja-calidad-auto')] ? store.get('tuzanja-calidad-auto') : coarse ? 'media' : 'alta');
+let qualityName = 'media';
+const autoQuality = () => !forcedQ && settings.quality === 'auto';
 
 const ui = new UI();
 const input = new Input({
@@ -203,7 +199,7 @@ function startMatch(heroId) {
   ui.resetHud();
   lastHero = heroId;
   match = new Match({
-    heroId, input, hud: ui, layer: ui.layer, env: envMap, quality: gfx.q, gore,
+    heroId, input, hud: ui, layer: ui.layer, env: envMap, quality: gfx.q, settings,
     onEnd: (res) => {
       state = 'results';
       input.enabled = false;
@@ -211,6 +207,7 @@ function startMatch(heroId) {
       ui.showResults(res);
     },
   });
+  ui.bindMatch(match);
   state = 'match';
   paused = false;
   fpsWarm = 0;
@@ -222,12 +219,24 @@ function startMatch(heroId) {
 }
 
 function togglePause() {
+  if (ui.closeSettings()) return; // Esc con la configuración abierta: la cierra
   if (state !== 'match' || !match || match.state === 'over') return;
   paused = !paused;
   input.enabled = !paused;
   if (paused) input.reset();
-  ui.setPaused(paused);
+  ui.setPaused(paused, match);
 }
+
+// Configuración: desde el menú, desde la pausa o desde el botón del HUD (que además pausa).
+function openSettings() {
+  audio.unlock();
+  audio.play('ui');
+  if (state === 'match' && !paused) togglePause();
+  ui.openSettings();
+}
+ui.onSettingsClose = () => {
+  if (state === 'match' && paused) ui.setPaused(true, match);
+};
 
 ui.onSelect = (id, byUser) => {
   showcase.setHero(id);
@@ -238,24 +247,35 @@ const portraits = showcase.portraits();
 for (const h of HEROES) if (h.art) portraits[h.id] = artUrl(h.art);
 ui.buildRoster(portraits);
 
-function setQuality(name, manual) {
+// Pone un nivel de calidad concreto.
+function setLevel(name) {
   qualityName = name;
   fpsWarm = 0;
   gfx.setQuality(name);
+  gfx.setOptions(settings);
   if (match) match.setQuality(gfx.q);
-  ui.setQuality(QUALITY[name].label);
-  if (manual) {
-    autoQuality = false;
-    store.set('tuzanja-calidad', name);
-  } else store.set('tuzanja-calidad-auto', name);
 }
-const cycleQuality = () => {
-  audio.unlock();
-  audio.play('ui');
-  setQuality(QUALITY_ORDER[(QUALITY_ORDER.indexOf(qualityName) + 1) % QUALITY_ORDER.length], true);
-};
-setQuality(qualityName, !!manualQ && !urlQ ? true : false);
-if (urlQ && QUALITY[urlQ]) autoQuality = false;
+// Decide el nivel según la configuración (o el que se forzó por la dirección).
+function applyQuality() {
+  const saved = autoLevel.get();
+  const auto = QUALITY[saved] ? saved : coarse ? 'media' : 'alta';
+  const want = forcedQ || (settings.quality === 'auto' ? auto : settings.quality);
+  if (want !== qualityName || !gfx.name) setLevel(want);
+}
+
+// Aplica la configuración a todo lo que depende de ella. k: lo que cambió (null = todo).
+function applySettings(k) {
+  if (k === null || k === 'quality') applyQuality();
+  gfx.setOptions(settings);
+  audio.setVolume(settings.volume);
+  audio.setMuted(settings.muted);
+  input.lefty = settings.lefty;
+  ui.applySettings();
+  if (match) match.applySettings(settings);
+  if (k === 'hudScale' || k === 'lefty' || k === null) resize();
+}
+onSettings(applySettings);
+applySettings(null);
 ui.setHints(coarse);
 ui.show('menu');
 
@@ -266,28 +286,15 @@ on('change', toMenu);
 on('resume', togglePause);
 on('quit', toMenu);
 on('btn-pause', togglePause);
-on('btn-quality', cycleQuality);
-on('btn-quality-2', cycleQuality);
-const toggleGore = () => {
-  gore = !gore;
-  store.set('tuzanja-sangre', gore ? '1' : '0');
-  if (match) match.gore = gore;
-  ui.setGore(gore);
+on('btn-settings', openSettings);
+on('btn-settings-2', openSettings);
+on('btn-gear', openSettings);
+on('btn-mute', () => {
   audio.unlock();
-  audio.play('ui');
-};
-on('btn-gore', toggleGore);
-on('btn-gore-2', toggleGore);
-ui.setGore(gore);
-const muteBtn = document.getElementById('btn-mute');
-muteBtn.classList.toggle('off', audio.muted);
-muteBtn.addEventListener('click', () => {
-  audio.unlock();
-  audio.setMuted(!audio.muted);
-  muteBtn.classList.toggle('off', audio.muted);
+  setSetting('muted', !settings.muted);
 });
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'Enter' || e.repeat) return;
+  if (e.code !== 'Enter' || e.repeat || ui.settingsOpen) return;
   if (state === 'menu') startMatch(ui.selected);
   else if (state === 'results') startMatch(lastHero);
 });
@@ -302,7 +309,7 @@ resize();
 // Mide los cuadros por segundo durante el juego y baja la calidad si no alcanza.
 // Espera unos segundos tras empezar o cambiar de nivel, porque ahí se compilan shaders.
 function watchFps(raw) {
-  if (!autoQuality || paused || state !== 'match' || match.state !== 'play' || raw > 3) {
+  if (!autoQuality() || paused || state !== 'match' || match.state !== 'play' || raw > 3) {
     fpsFrames = fpsTime = 0;
     return;
   }
@@ -317,17 +324,25 @@ function watchFps(raw) {
   fpsFrames = fpsTime = 0;
   const i = QUALITY_ORDER.indexOf(qualityName);
   if (fps < 27 && i > 0) {
-    setQuality(QUALITY_ORDER[i - 1], false);
-    ui.toast(`Bajé los gráficos a ${QUALITY[qualityName].label} para que vaya más fluido. Se cambia desde Pausa.`);
+    setLevel(QUALITY_ORDER[i - 1]);
+    autoLevel.set(qualityName);
+    ui.toast(`Bajé los gráficos a ${QUALITY[qualityName].label} para que vaya más fluido. Se cambia en Configuración.`);
   }
 }
 
 let last = performance.now();
+let shownFrames = 0, shownTime = 0; // contador de cuadros por segundo que se muestra
 function loop(now) {
   requestAnimationFrame(loop);
   const raw = (now - last) / 1000;
   const dt = Math.min(0.05, raw);
   last = now;
+  shownFrames++;
+  shownTime += raw;
+  if (shownTime >= 0.5) {
+    if (settings.fps) ui.setFps(Math.round(shownFrames / shownTime));
+    shownFrames = shownTime = 0;
+  }
   if (state === 'menu') {
     showcase.update(dt);
     gfx.render(showcase.scene, showcase.camera, dt);
@@ -340,4 +355,4 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 // Gancho de depuración para pruebas automáticas.
-window.__trifulca = { get match() { return match; }, get state() { return state; }, get quality() { return qualityName; }, gfx, showcase, input, startMatch, toMenu, setQuality };
+window.__trifulca = { get match() { return match; }, get state() { return state; }, get quality() { return qualityName; }, gfx, showcase, input, settings, setSetting, startMatch, toMenu, setQuality: setLevel };

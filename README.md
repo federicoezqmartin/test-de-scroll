@@ -26,6 +26,31 @@ Arena 3 contra 3 con vista cenital, en 3D real (three.js), que corre en el naveg
 - Teclado y mouse: `WASD` o flechas para moverte, mouse para apuntar, clic para disparar, `Espacio` o clic derecho para el súper (mantené para ver a dónde va), `Esc` para pausar.
 - Celular: palanca izquierda para moverte; el botón rojo dispara solo al rival más cercano si lo tocás, o apunta si lo arrastrás. El botón de súper funciona igual.
 
+## Interfaz de partida
+
+- **Marcador:** diez casilleros por equipo que se van llenando, la meta y el reloj de la partida.
+- **Tarjeta del jugador:** retrato, vida en números, munición y núcleos que llevás.
+- **Paneles de equipo:** aliados y rivales con retrato, vida, núcleos y la cuenta para reaparecer. De un rival escondido se muestra lo último que se le vio.
+- **Minimapa:** mapa, núcleos en el piso, aliados y los rivales que estén a la vista. Se actualiza cuando se rompe un cajón o se corta pasto.
+- **Avisos:** bajas con retratos, rachas ("¡Doble baja!"), un arco rojo que marca de dónde vino el golpe, quién te eliminó y la mira del mouse.
+- **Pausa:** tabla en vivo con bajas, daño y núcleos de los seis.
+
+En celular la tarjeta, los paneles y el minimapa suben para dejar libres los pulgares.
+
+## Configuración
+
+Se abre desde el menú, la pausa o el engranaje del HUD, y se guarda en el navegador. Todo está definido en `src/settings.js` (valores por defecto y la lista de controles de la pantalla).
+
+| Sección | Opciones |
+|---|---|
+| Juego | Tu nombre · dificultad de los bots (Fácil, Normal, Difícil) |
+| Gráficos | Calidad (Auto, Baja, Media, Alta) · resplandor · desenfoque de maqueta · color de cine · temblor de cámara · distancia de cámara · sangre · cuadros por segundo |
+| Sonido | Volumen · silenciar |
+| Interfaz | Tamaño · minimapa · paneles de equipo · nombres · números de daño · aviso de dónde viene el daño · colores de equipo (azul y rojo, o azul y naranja para daltonismo) |
+| Controles táctiles | Modo zurdo · tamaño de los botones |
+
+La dificultad, el nombre y el color de equipo en el 3D se aplican al empezar la próxima partida; el resto cambia al instante.
+
 ## Gráficos
 
 - **Luz y sombras:** sol bajo con sombras largas y suaves, luz de relleno, reflejos de entorno, sombra de contacto bajo personajes y alrededor de muros y cajones.
@@ -34,7 +59,7 @@ Arena 3 contra 3 con vista cenital, en 3D real (three.js), que corre en el naveg
 - **Posprocesado** (`src/gfx.js`): oclusión ambiental, bloom, desenfoque leve de maqueta arriba y abajo, corrección de color, viñeta y grano.
 - **Efectos:** humo y polvo, marcas de quemado, luces de destello en explosiones, polvo al caminar, motas en el aire, vapor del reactor.
 
-Hay tres niveles, que se cambian desde el menú o la pausa:
+Hay tres niveles, que se eligen en Configuración:
 
 | Nivel | Qué incluye |
 |---|---|
@@ -42,7 +67,7 @@ Hay tres niveles, que se cambian desde el menú o la pausa:
 | Media | Bloom, corrección de color, antialias liviano, sombras de 2048 |
 | Baja | Sin posprocesado, sombras de 1024, menos partículas |
 
-Arranca en Alta (Media en pantallas táctiles). Si durante la partida no llega a unos 27 cuadros por segundo, baja sola un nivel y avisa. Elegir un nivel a mano apaga ese ajuste. Para forzar uno desde la dirección: `?q=alta`, `?q=media` o `?q=baja`.
+En "Auto" arranca en Alta (Media en pantallas táctiles) y, si durante la partida no llega a unos 27 cuadros por segundo, baja sola un nivel y avisa. Para forzar uno por una visita: `?q=alta`, `?q=media` o `?q=baja`.
 
 ## Físicas y realismo
 
@@ -52,7 +77,7 @@ Arranca en Alta (Media en pantallas táctiles). Si durante la partida no llega a
 - **Golpes:** cada personaje pierde lo que le corresponde: sangre que mancha el piso (Nox, Pompa, Zip, Tajo), aceite y chispas (Tuerca) o brasas y cascotes (Brasa). El cuerpo se inclina hacia donde lo empujan, y con poca vida gotea o larga humo.
 - **Muertes:** los de carne caen hacia donde vino el golpe y dejan un charco; el robot y el gólem se desarman en piezas.
 - **Movimiento y armas:** inercia al arrancar y frenar, retroceso al disparar y casquillos en los remaches de Tuerca.
-- **Sangre: Sí / No** desde el menú o la pausa. Apagada, los golpes sueltan chispas blancas y no quedan manchas.
+- **Sangre** se apaga en Configuración. Apagada, los golpes sueltan chispas blancas y no quedan manchas.
 
 ## Correrlo
 
@@ -80,7 +105,8 @@ src/assets.js     carga de las texturas de public/arte
 src/fx.js         partículas, proyectiles, textos flotantes
 src/audio.js      sonido sintetizado (no hay archivos de audio)
 src/input.js      teclado, mouse y táctil
-src/ui.js         interfaz en DOM
+src/ui.js         interfaz en DOM: menú, HUD, pausa, configuración, resultados
+src/settings.js   configuración: valores, guardado y lista de controles
 ```
 
 ## Arte

@@ -12,7 +12,7 @@ class AudioSys {
       if (!AC) return;
       this.ctx = new AC();
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.5;
+      this.master.gain.value = this.muted ? 0 : (this.volume ?? 0.8) * 0.62;
       const comp = this.ctx.createDynamicsCompressor();
       this.master.connect(comp).connect(this.ctx.destination);
       const len = this.ctx.sampleRate;
@@ -23,10 +23,14 @@ class AudioSys {
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
 
+  setVolume(v) {
+    this.volume = Math.max(0, Math.min(1, v));
+    if (this.master) this.master.gain.value = this.muted ? 0 : this.volume * 0.62;
+  }
+
   setMuted(m) {
     this.muted = m;
-    try { localStorage.setItem('trifulca-mute', m ? '1' : '0'); } catch { /* sin storage */ }
-    if (this.master) this.master.gain.value = m ? 0 : 0.5;
+    if (this.master) this.master.gain.value = m ? 0 : (this.volume ?? 0.8) * 0.62;
   }
 
   tone({ type = 'sine', f0 = 440, f1 = f0, dur = 0.1, vol = 0.3, delay = 0 }) {

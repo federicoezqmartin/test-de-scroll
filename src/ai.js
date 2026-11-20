@@ -104,7 +104,7 @@ export class Bot {
     if (!f.alive) { this.path = null; f.mvx = f.mvz = 0; return; }
     this.thinkT -= dt; this.fireCd -= dt; this.superCd -= dt; this.strafeT -= dt;
     if (this.strafeT <= 0) { this.strafe *= -1; this.strafeT = 0.7 + Math.random() * 1.3; }
-    if (this.thinkT <= 0) { this.thinkT = 0.2 + Math.random() * 0.12; this.think(); }
+    if (this.thinkT <= 0) { this.thinkT = (0.2 + Math.random() * 0.12) * this.m.skill.think; this.think(); }
     this.follow(dt);
     this.combat();
   }
@@ -220,7 +220,7 @@ export class Bot {
       if (use) {
         const dx = ax - f.x, dz = az - f.z, l = Math.hypot(dx, dz) || 1;
         m.trySuper(f, dx / l, dz / l, l);
-        this.superCd = 1.5;
+        this.superCd = 1.5 * m.skill.cd;
         this.fireCd = Math.max(this.fireCd, 0.35);
         return;
       }
@@ -231,15 +231,16 @@ export class Bot {
     if (d > atk.range * (melee ? 0.85 : 0.93)) return;
     if (!lob && !w.shotClear(f.x, f.z, t.x, t.z)) return;
     const tt = lob ? atk.flight : melee ? 0 : d / atk.speed;
-    const px = t.x + t.velx * tt * 0.75, pz = t.z + t.velz * tt * 0.75;
+    const sk = m.skill;
+    const px = t.x + t.velx * tt * sk.lead, pz = t.z + t.velz * tt * sk.lead;
     let dx = px - f.x, dz = pz - f.z;
     const l = Math.hypot(dx, dz) || 1;
-    const err = (Math.random() - 0.5) * (lob ? 0.12 : 0.2);
+    const err = (Math.random() - 0.5) * (lob ? 0.12 : 0.2) * sk.err;
     const cs = Math.cos(err), sn = Math.sin(err);
     const ex = (dx * cs - dz * sn) / l, ez = (dx * sn + dz * cs) / l;
     if (m.tryAttack(f, ex, ez, l)) {
       const finishing = t.hp < atk.dmg * (atk.count || atk.hits || 1) * 1.2;
-      this.fireCd = (finishing ? 0.25 : 0.45) + Math.random() * 0.55;
+      this.fireCd = ((finishing ? 0.25 : 0.45) + Math.random() * 0.55) * sk.cd;
     }
   }
 }

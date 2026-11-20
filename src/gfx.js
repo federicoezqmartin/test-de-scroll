@@ -91,6 +91,7 @@ export class Gfx {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.q.dpr));
     this.teardown();
     if (this.q.post) this.build();
+    if (this.opts) this.setOptions(this.opts);
     this.setSize(this.w, this.h);
   }
 
@@ -126,6 +127,20 @@ export class Gfx {
     if (q.fxaa) c.addPass(new FXAAPass());
     c.addPass((this.grade = new ShaderPass(GradeShader)));
     this.grade.uniforms.uCA.value = q.ao ? 0.005 : 0;
+  }
+
+  // Efectos que se prenden y apagan desde Configuración, dentro de lo que el nivel permite.
+  setOptions(o) {
+    this.opts = { bloom: o.bloom !== false, tilt: o.tilt !== false, grade: o.grade !== false };
+    if (!this.composer) return;
+    this.bloom.enabled = this.opts.bloom;
+    if (this.tiltH) this.tiltH.enabled = this.tiltV.enabled = this.opts.tilt;
+    const u = this.grade.uniforms, on = this.opts.grade;
+    u.uVig.value = on ? 0.28 : 0;
+    u.uSat.value = on ? 1.14 : 1;
+    u.uCon.value = on ? 1.08 : 1;
+    u.uGrain.value = on ? 0.022 : 0;
+    u.uCA.value = on && this.q.ao ? 0.005 : 0;
   }
 
   setSize(w, h) {

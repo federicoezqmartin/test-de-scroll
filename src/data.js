@@ -13,10 +13,14 @@ export const RULES = {
   ammoMax: 3,
 };
 
+// Colores por defecto; applyTeamPalette los cambia según la configuración.
 export const TEAMS = [
-  { name: 'AZUL', color: 0x2f9bff, css: '#2f9bff' },
-  { name: 'ROJO', color: 0xff4757, css: '#ff4757' },
+  { name: 'AZUL', color: 0x2f9bff, css: '#2f9bff', shot: 0x2f9bff },
+  { name: 'ROJO', color: 0xff4757, css: '#ff4757', shot: 0xff3355 },
 ];
+export function applyTeamPalette(pal) {
+  pal.forEach((p, i) => Object.assign(TEAMS[i], p));
+}
 
 export const BOT_NAMES = ['Rulo', 'Mecha', 'Pipa', 'Tano', 'Fideo', 'Lola', 'Brisa', 'Coco', 'Nacho', 'Greta', 'Turco', 'Mora'];
 
