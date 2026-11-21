@@ -54,7 +54,7 @@ La dificultad, el nombre y el color de equipo en el 3D se aplican al empezar la 
 ## Gráficos
 
 - **Luz y sombras:** sol bajo con sombras largas y suaves, luz de relleno, reflejos de entorno, sombra de contacto bajo personajes y alrededor de muros y cajones.
-- **Materiales:** relieve (normal maps) generado a partir de las texturas de arena, piedra, madera, acero, lava y plumas.
+- **Materiales:** relieve (normal maps) generado a partir de las texturas de arena, piedra, madera y acero.
 - **Shaders propios** (`src/shaders.js`): agua de las piletas con espuma y red de luz, mar con oleaje hacia la costa, pasto que se mueve con el viento y se abre al paso de los luchadores, borde de luz del color del equipo y destello de daño en los personajes, escudo, zonas de efecto e indicador de puntería.
 - **Posprocesado** (`src/gfx.js`): oclusión ambiental, bloom, desenfoque leve de maqueta arriba y abajo, corrección de color, viñeta y grano.
 - **Efectos:** humo y polvo, marcas de quemado, luces de destello en explosiones, polvo al caminar, motas en el aire, vapor del reactor.
@@ -100,7 +100,8 @@ src/world.js      arena: colisiones y escenario
 src/physics.js    escombros con física (gravedad, rebotes, agua)
 src/shaders.js    shaders propios (agua, mar, pasto, personajes, escudo, zonas)
 src/gfx.js        niveles de calidad y posprocesado
-src/models.js     personajes 3D armados con primitivas, con materiales del arte
+src/models.js     personajes 3D armados desde sus hojas de arte
+src/perfiles/     silueta medida de cada personaje (la genera arte/perfilar_hojas.py)
 src/assets.js     carga de las texturas de public/arte
 src/fx.js         partículas, proyectiles, textos flotantes
 src/audio.js      sonido sintetizado (no hay archivos de audio)
@@ -113,15 +114,19 @@ src/settings.js   configuración: valores, guardado y lista de controles
 
 El arte se generó con IA a partir de prompts y vive en dos carpetas:
 
-- `public/arte/`: lo que usa el juego (alrededor de 1 MB). Texturas de arena, piedra, cajón y pasto; el núcleo y el logo recortados; las fichas de los personajes (`ficha-*.webp`) que se ven en el menú; los materiales `mat-*.webp` recortados de las hojas de personaje; y los mapas de relieve `*-n.webp`.
+- `public/arte/`: lo que usa el juego (alrededor de 1,6 MB). Texturas de arena, piedra, cajón y pasto; el núcleo y el logo recortados; las fichas de los personajes (`ficha-*.webp`) que se ven en el menú; las hojas de personaje listas para proyectar (`hoja-*.webp`, `tajo-hoja.webp`); el material de acero; y los mapas de relieve `*-n.webp`.
 - `arte/referencias/`: copias reducidas de las imágenes originales, para seguir ajustando los modelos.
 
 `arte/procesar_arte.py` es el script que convierte los originales en los archivos de `public/arte/` (necesita Python con Pillow y numpy, y los PNG originales en la carpeta que indica la variable `U`).
 
-Dentro de la partida hay dos tipos de personaje:
+Dentro de la partida, cinco de los seis personajes se arman a partir de su hoja de arte:
 
-- **Tajo** se arma a partir de su hoja de arte. `arte/perfilar_tajo.py` mide la silueta de frente y de perfil y la guarda en `src/tajo-perfil.json`; con eso `models.js` levanta el cuerpo por rodajas (cabeza, torso con mochila, brazos y piernas) y lo pinta proyectando la misma hoja (`public/arte/tajo-hoja.webp`) de frente, perfil y espalda. Por eso se ve como el dibujo desde cualquier ángulo.
-- **El resto** son modelos hechos con formas simples que imitan sus hojas, con materiales recortados de ellas. Zip todavía no tiene hoja de arte y usa una foto de su modelo como retrato.
+- **Tuerca, Brasa, Nox y Pompa:** `arte/perfilar_hojas.py` toma de cada hoja las vistas de frente, perfil y espalda, mide la silueta de cada parte (cabeza, torso, brazos, piernas) y guarda las tres vistas juntas en `public/arte/hoja-<id>.webp` y las medidas en `src/perfiles/<id>.json`. Con eso `models.js` levanta cada cuerpo por rodajas y lo pinta proyectando la hoja de frente, perfil y espalda, así se ve como el dibujo desde cualquier ángulo. Lo que brilla en el dibujo (el ojo de Tuerca, la lava de Brasa, los ojos de Nox) brilla también en el juego.
+- **Tajo** usa el mismo método, con su propio script (`arte/perfilar_tajo.py`, `src/tajo-perfil.json`), que es anterior.
+- Algunas piezas van aparte, hechas con formas simples, porque se mueven o hay que verlas desde arriba: la antena de Tuerca, la llama de Brasa, los mechones y la ballesta de Nox, el frasco de Pompa, el hacha y el farol de Tajo.
+- **Zip** todavía no tiene hoja de arte: es un modelo de formas simples y usa una foto de ese modelo como retrato.
+
+Para ajustar un personaje (qué filas ocupa cada parte, dónde giran los brazos) se edita la tabla `HEROES` de `perfilar_hojas.py` y se vuelve a correr; con `DEBUG_DIR` guarda una imagen de control con lo que midió.
 
 El sonido se sintetiza por código.
 

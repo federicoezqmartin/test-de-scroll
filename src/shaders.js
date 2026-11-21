@@ -197,19 +197,26 @@ export function patchHero(material, u) {
 // Pinta un cuerpo 3D con la hoja del personaje: cada vértice trae su coordenada en la vista
 // de frente, de espalda y de perfil (aUvF, aUvB, aUvS) y cuánto pesa cada una (aW), según
 // hacia dónde mira esa parte de la superficie.
-export function projectedMaterial(atlas) {
+// glow = [r, g, b, fuerza]: hace brillar por su cuenta las zonas de la hoja que son claras y
+// tiran hacia ese color (p. ej. [-1, 0, 1] = celeste: el ojo del robot; [1, 0, -1] = fuego).
+export function projectedMaterial(atlas, glow = [0, 0, 0, 0]) {
   const m = new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 0.8, metalness: 0 });
   m.userData.shaderKey = '-proj';
+  m.userData.glow = { value: new THREE.Vector4(...glow) };
   m.userData.shaderExtra = (s) => {
     s.uniforms.uAtlas = { value: atlas };
+    s.uniforms.uGlow = m.userData.glow;
     s.vertexShader = s.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec2 aUvF;\nattribute vec2 aUvB;\nattribute vec2 aUvS;\nattribute vec3 aW;\nvarying vec2 vUvF;\nvarying vec2 vUvB;\nvarying vec2 vUvS;\nvarying vec3 vW;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvUvF = aUvF;\nvUvB = aUvB;\nvUvS = aUvS;\nvW = aW;');
     s.fragmentShader = s.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uAtlas;\nvarying vec2 vUvF;\nvarying vec2 vUvB;\nvarying vec2 vUvS;\nvarying vec3 vW;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uAtlas;\nuniform vec4 uGlow;\nvarying vec2 vUvF;\nvarying vec2 vUvB;\nvarying vec2 vUvS;\nvarying vec3 vW;')
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
         vec3 pj = texture2D(uAtlas, vUvF).rgb * vW.x + texture2D(uAtlas, vUvB).rgb * vW.y + texture2D(uAtlas, vUvS).rgb * vW.z;
-        diffuseColor.rgb *= pj / max(vW.x + vW.y + vW.z, 0.001);`);
+        pj /= max(vW.x + vW.y + vW.z, 0.001);
+        diffuseColor.rgb *= pj;
+        float glowK = smoothstep(0.25, 0.55, dot(pj, uGlow.xyz)) * smoothstep(0.45, 0.85, max(pj.r, max(pj.g, pj.b)));
+        totalEmissiveRadiance += pj * glowK * uGlow.w;`);
   };
   return m;
 }

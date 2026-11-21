@@ -61,23 +61,10 @@ for k,v in fichas.items(): fit(v,420).save(OUT+f'ficha-{k}.webp',quality=88)
 fit(cut(im['nucleo'],(0,0,1254,1254),tol=70,erode=2),256).save(OUT+'nucleo.webp',quality=90)
 fit(cut(im['logo'],(0,0,2172,724),tol=60,erode=2),400,900).save(OUT+'logo.webp',quality=90)
 
-# Materiales de personajes
+# Material de acero (antena de Tuerca, hacha de Tajo, reactor). Los cuerpos de los personajes
+# ya no usan materiales recortados: se pintan con su hoja entera (ver perfilar_hojas.py).
 steel=im['hoja-tuerca'].crop((1240,245,1470,395)).resize((256,256),Image.LANCZOS)
 steel.save(OUT+'mat-acero.webp',quality=85)
-g=np.asarray(steel.convert('L')).astype(np.float32)/255; g=(g-g.mean())/g.std()
-rng=np.random.default_rng(3)
-lum=np.clip(1+g*0.16,0.55,1.25)[...,None]
-orange=np.array([226,116,30],np.float32)*lum
-noise=np.asarray(Image.fromarray((rng.random((32,32))*255).astype(np.uint8)).resize((256,256),Image.BICUBIC)).astype(np.float32)/255
-fine=rng.random((256,256))
-rust=((noise>0.8)&(fine>0.62))[...,None]
-orange=np.where(rust,np.array([92,58,40],np.float32)*(0.8+0.4*fine[...,None]),orange)
-Image.fromarray(np.clip(orange,0,255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.6)).save(OUT+'mat-naranja.webp',quality=85)
-lava=im['guia-brasa'].crop((790,700,905,800)).resize((256,256),Image.LANCZOS); lava.save(OUT+'mat-lava.webp',quality=85)
-a=np.asarray(lava).astype(np.float32)
-hot=np.clip(((a[...,0]-a[...,2])-70)/90,0,1)*np.clip((a[...,0]-120)/80,0,1)
-Image.fromarray((a*hot[...,None]).astype(np.uint8)).save(OUT+'mat-lava-brillo.webp',quality=85)
-im['guia-nox'].crop((785,640,875,710)).resize((256,256),Image.LANCZOS).save(OUT+'mat-plumas.webp',quality=85)
 
 # Colores de referencia (promedios) para los materiales lisos
 def avg(k,b): return '#%02x%02x%02x'%tuple(int(x) for x in np.asarray(im[k].crop(b)).reshape(-1,3).mean(0))
@@ -103,5 +90,5 @@ def normal_map(name, strength, wrap, invert_hot=False):
     n=np.stack([-dx*strength,dy*strength,np.ones_like(h)],-1); n/=np.linalg.norm(n,axis=-1,keepdims=True)
     Image.fromarray(((n*0.5+0.5)*255).astype(np.uint8)).save(OUT+name+'-n.webp',quality=92)
 normal_map('arena',5,True); normal_map('piedra',9,False); normal_map('cajon',8,False)
-normal_map('mat-acero',4,False); normal_map('mat-lava',7,False,invert_hot=True); normal_map('mat-plumas',6,False)
+normal_map('mat-acero',4,False)
 normal_map('pasto',5,True)

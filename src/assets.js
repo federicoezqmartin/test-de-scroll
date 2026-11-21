@@ -24,10 +24,8 @@ export function tex(name, { repeat = false, data = false } = {}) {
 // Las pide por adelantado para que estén listas al entrar a la partida.
 export function preloadArt() {
   for (const n of ['arena.webp', 'pasto.webp']) tex(n, { repeat: true });
-  for (const n of ['piedra.webp', 'cajon.webp', 'nucleo.webp', 'mat-acero.webp', 'mat-naranja.webp', 'mat-lava.webp', 'mat-lava-brillo.webp']) tex(n);
-  tex('mat-plumas.webp', { repeat: true });
+  for (const n of ['piedra.webp', 'cajon.webp', 'nucleo.webp', 'mat-acero.webp']) tex(n);
   for (const n of ['arena-n.webp', 'pasto-n.webp']) tex(n, { repeat: true, data: true });
-  for (const n of ['piedra-n.webp', 'cajon-n.webp', 'mat-acero-n.webp', 'mat-lava-n.webp']) tex(n, { data: true });
-  tex('mat-plumas-n.webp', { repeat: true, data: true });
-  tex('tajo-hoja.webp');
+  for (const n of ['piedra-n.webp', 'cajon-n.webp', 'mat-acero-n.webp']) tex(n, { data: true });
+  for (const n of ['tajo-hoja.webp', 'hoja-tuerca.webp', 'hoja-brasa.webp', 'hoja-nox.webp', 'hoja-pompa.webp']) tex(n);
 }

@@ -5,6 +5,10 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { tex } from './assets.js';
 import { heroUniforms, patchHero, projectedMaterial } from './shaders.js';
 import TAJO from './tajo-perfil.json';
+import P_TUERCA from './perfiles/tuerca.json';
+import P_BRASA from './perfiles/brasa.json';
+import P_NOX from './perfiles/nox.json';
+import P_POMPA from './perfiles/pompa.json';
 
 const PI = Math.PI;
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.05, ...o });
@@ -19,49 +23,6 @@ function part(geo, mat, parent, x = 0, y = 0, z = 0) {
   return m;
 }
 
-// Texturas chicas dibujadas una sola vez y compartidas (no se liberan con el personaje).
-const drawn = {};
-function drawTex(key, size, draw) {
-  if (!drawn[key]) {
-    const c = document.createElement('canvas');
-    c.width = c.height = size;
-    draw(c.getContext('2d'), size);
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    drawn[key] = t;
-  }
-  return drawn[key];
-}
-const hazardTex = () => drawTex('hazard', 64, (g, s) => {
-  g.fillStyle = '#e8c21a';
-  g.fillRect(0, 0, s, s);
-  g.fillStyle = '#1b1a18';
-  for (let i = -s; i < s * 2; i += 32) {
-    g.beginPath();
-    g.moveTo(i, 0); g.lineTo(i + 16, 0); g.lineTo(i + 16 - s, s); g.lineTo(i - s, s);
-    g.fill();
-  }
-});
-const stripesTex = () => drawTex('stripes', 64, (g, s) => {
-  g.fillStyle = '#eee3d6';
-  g.fillRect(0, 0, s, s);
-  g.fillStyle = '#c8b1a8';
-  for (let i = 0; i < s; i += 8) g.fillRect(i, 0, 3, s);
-});
-const frogTex = () => drawTex('frog', 128, (g, s) => {
-  g.fillStyle = '#6fae2a';
-  g.fillRect(0, 0, s, s);
-  let a = 11;
-  const rnd = () => ((a = (a * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 26; i++) {
-    g.fillStyle = i % 3 ? 'rgba(62,120,26,.55)' : 'rgba(150,190,60,.5)';
-    g.beginPath();
-    g.ellipse(rnd() * s, rnd() * s, 4 + rnd() * 9, 3 + rnd() * 6, rnd() * 3, 0, 7);
-    g.fill();
-  }
-});
-
 function baseRig(hipY, height) {
   const root = new THREE.Group();
   const hips = new THREE.Group();
@@ -73,277 +34,6 @@ function baseRig(hipY, height) {
   const head = new THREE.Group(), armL = new THREE.Group(), armR = new THREE.Group();
   torso.add(head, armL, armR);
   return { root, hips, legL, legR, torso, head, armL, armR, hipY, height, seed: Math.random() * 10, armSwing: 1, kickArm: 0.5, custom: null };
-}
-
-// --- Tuerca: robot de taller, casco enorme y brazo taladro --------------------
-function tuerca() {
-  const r = baseRig(0.3, 1.72);
-  const steel = std(0xffffff, { map: tex('mat-acero.webp'), metalness: 0.75, roughness: 0.42, ...steelN() });
-  const orange = std(0xffffff, { map: tex('mat-naranja.webp'), metalness: 0.3, roughness: 0.62, ...steelN() });
-  const dark = std(0x3a3837, { metalness: 0.6, roughness: 0.5 });
-  const glass = std(0x07090d, { roughness: 0.1, metalness: 0.5 });
-  const hazard = std(0xffffff, { map: hazardTex(), metalness: 0.3, roughness: 0.6 });
-  const cyan = glow(0x2fe6f5, 3.4), red = std(0xd0211c, { roughness: 0.25 }), white = glow(0xffffff, 2);
-
-  for (const [leg, x] of [[r.legL, 0.17], [r.legR, -0.17]]) {
-    leg.position.x = x;
-    part(new RoundedBoxGeometry(0.24, 0.2, 0.26, 2, 0.07), orange, leg, 0, -0.1, 0);
-    part(new RoundedBoxGeometry(0.27, 0.14, 0.32, 2, 0.06), dark, leg, 0, -0.23, 0.03);
-  }
-  part(new RoundedBoxGeometry(0.6, 0.46, 0.46, 3, 0.12), orange, r.torso, 0, 0.24, 0);
-  part(new RoundedBoxGeometry(0.3, 0.24, 0.06, 2, 0.02), orange, r.torso, 0, 0.27, 0.235);
-  part(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 6).rotateX(PI / 2), steel, r.torso, 0, 0.27, 0.275);
-  part(new RoundedBoxGeometry(0.32, 0.24, 0.05, 2, 0.02), orange, r.torso, 0, 0.27, -0.235);
-  for (let i = 0; i < 3; i++) part(new THREE.BoxGeometry(0.18, 0.028, 0.02), dark, r.torso, 0, 0.21 + i * 0.06, -0.265);
-  part(new THREE.CylinderGeometry(0.13, 0.15, 0.08, 12), dark, r.torso, 0, 0.5, 0);
-
-  r.head.position.set(0, 0.93, 0);
-  part(new THREE.SphereGeometry(0.44, 28, 20), steel, r.head);
-  part(new THREE.SphereGeometry(0.447, 12, 8, PI - 0.75, 0.75, 0.35, 0.62), orange, r.head);
-  part(new THREE.SphereGeometry(0.447, 12, 8, 0, 0.75, 0.35, 0.62), orange, r.head);
-  part(new THREE.SphereGeometry(0.455, 28, 12, PI / 2 - 1.02, 2.04, 1.12, 0.95), glass, r.head);
-  for (const s of [1, -1]) {
-    part(new THREE.CylinderGeometry(0.14, 0.14, 0.08, 16).rotateZ(PI / 2), orange, r.head, s * 0.44, -0.03, 0);
-    part(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 12).rotateZ(PI / 2), steel, r.head, s * 0.485, -0.03, 0);
-  }
-  const eye = new THREE.Group();
-  eye.position.set(0, -0.05, 0.452);
-  r.head.add(eye);
-  part(new THREE.TorusGeometry(0.105, 0.034, 8, 22), cyan, eye);
-  part(new THREE.SphereGeometry(0.045, 10, 8), cyan, eye, 0, 0, 0.005);
-  part(new THREE.SphereGeometry(0.024, 8, 6), white, eye, 0.05, 0.035, 0.03);
-  part(new THREE.CylinderGeometry(0.1, 0.14, 0.07, 14), steel, r.head, 0, 0.44, 0);
-  const ant = new THREE.Group();
-  ant.position.set(0, 0.47, 0);
-  r.head.add(ant);
-  part(new THREE.CylinderGeometry(0.018, 0.018, 0.22, 6), steel, ant, 0, 0.11, 0);
-  part(new THREE.SphereGeometry(0.06, 12, 10), red, ant, 0, 0.26, 0);
-
-  for (const [arm, x] of [[r.armL, 0.37], [r.armR, -0.37]]) {
-    arm.position.set(x, 0.4, 0);
-    part(new THREE.SphereGeometry(0.095, 12, 10), steel, arm);
-    part(new THREE.CylinderGeometry(0.085, 0.1, 0.16, 12), orange, arm, 0, -0.11, 0);
-    part(new THREE.CylinderGeometry(0.105, 0.105, 0.12, 14), hazard, arm, 0, -0.24, 0);
-  }
-  part(new THREE.CylinderGeometry(0.1, 0.075, 0.1, 12), steel, r.armR, 0, -0.34, 0);
-  part(new THREE.ConeGeometry(0.075, 0.18, 12).rotateX(PI), steel, r.armR, 0, -0.47, 0);
-  part(new THREE.SphereGeometry(0.085, 10, 8), steel, r.armL, 0, -0.35, 0);
-  for (const fx of [-0.05, 0, 0.05]) part(new THREE.BoxGeometry(0.035, 0.09, 0.04), dark, r.armL, fx, -0.44, 0.02);
-
-  r.armSwing = 0.6;
-  r.kickArm = 0;
-  r.custom = (s) => {
-    ant.rotation.z = Math.sin(s.t * 6 + r.seed) * 0.12 + Math.sin(s.phase) * 0.2 * s.move;
-    eye.scale.setScalar(1 + s.kick * 0.25);
-    r.armR.rotation.x = -0.55 - s.kick * 0.9 + Math.sin(s.phase) * 0.2 * s.move;
-    r.armR.position.z = -s.kick * 0.08;
-    r.head.rotation.z = Math.sin(s.phase) * 0.04 * s.move;
-  };
-  return r;
-}
-
-// --- Brasa: gólem de roca con grietas de lava ---------------------------------
-function brasa() {
-  const r = baseRig(0.3, 1.6);
-  const rock = new THREE.MeshStandardMaterial({
-    map: tex('mat-lava.webp'), emissiveMap: tex('mat-lava-brillo.webp'), emissive: 0xffffff, emissiveIntensity: 1.8,
-    normalMap: tex('mat-lava-n.webp', { data: true }), normalScale: new THREE.Vector2(1.6, 1.6),
-    roughness: 0.95, flatShading: true,
-  });
-  const stone = std(0x3a3231, { flatShading: true, roughness: 0.95 });
-  const hot = glow(0xffb81a, 1.9), fire = glow(0xff5a0a, 1.5);
-  const lump = (rad, parent, x, y, z, sx = 1, sy = 1, sz = 1, mat = rock) => {
-    const m = part(new THREE.IcosahedronGeometry(rad, 1), mat, parent, x, y, z);
-    m.scale.set(sx, sy, sz);
-    m.rotation.set(x * 3, y * 2, z * 4);
-    return m;
-  };
-
-  for (const [leg, x] of [[r.legL, 0.27], [r.legR, -0.27]]) {
-    leg.position.x = x;
-    lump(0.2, leg, 0, -0.13, 0, 1, 1.15, 1.1);
-    lump(0.15, leg, 0, -0.22, 0.1, 1.2, 0.6, 1.2, stone);
-  }
-  lump(0.52, r.torso, 0, 0.42, 0, 1.2, 0.95, 0.92);
-  lump(0.2, r.torso, 0.5, 0.74, -0.06, 1, 1, 1, stone);
-  lump(0.2, r.torso, -0.5, 0.74, -0.06, 1, 1, 1, stone);
-  lump(0.24, r.torso, 0, 0.74, -0.26, 1.2, 0.9, 1, stone);
-
-  r.head.position.set(0, 0.8, 0.2);
-  lump(0.3, r.head, 0, 0, 0, 1.15, 0.9, 1);
-  part(new THREE.BoxGeometry(0.5, 0.08, 0.1), stone, r.head, 0, 0.12, 0.22).rotation.x = 0.3;
-  part(new THREE.BoxGeometry(0.15, 0.09, 0.08), hot, r.head, 0.14, 0.02, 0.27).rotation.z = 0.35;
-  part(new THREE.BoxGeometry(0.15, 0.09, 0.08), hot, r.head, -0.14, 0.02, 0.27).rotation.z = -0.35;
-  part(new THREE.BoxGeometry(0.2, 0.045, 0.06), stone, r.head, 0, -0.15, 0.27);
-  const flame = new THREE.Group();
-  flame.position.set(0, 0.24, -0.04);
-  r.head.add(flame);
-  const f1 = part(new THREE.ConeGeometry(0.15, 0.4, 7), fire, flame, 0, 0.18, 0);
-  const f2 = part(new THREE.ConeGeometry(0.09, 0.3, 6), hot, flame, 0.02, 0.16, 0.03);
-  const f3 = part(new THREE.ConeGeometry(0.07, 0.24, 6), fire, flame, -0.11, 0.1, 0);
-  f1.castShadow = f2.castShadow = f3.castShadow = false;
-
-  for (const [arm, x] of [[r.armL, 0.68], [r.armR, -0.68]]) {
-    arm.position.set(x, 0.62, 0);
-    lump(0.2, arm, 0, -0.08, 0);
-    lump(0.3, arm, 0, -0.42, 0.06, 1, 1.15, 1);
-    lump(0.14, arm, 0.08, -0.64, 0.12, 1, 1, 1, stone);
-    lump(0.14, arm, -0.08, -0.64, 0.1, 1, 1, 1, stone);
-  }
-  r.armSwing = 0.8;
-  r.kickArm = 1.5;
-  r.custom = (s) => {
-    const k = 1 + Math.sin(s.t * 11 + r.seed) * 0.16 + Math.sin(s.t * 17) * 0.1;
-    f1.scale.set(1, k, 1);
-    f2.scale.set(1, 2 - k, 1);
-    f3.rotation.z = 0.3 + Math.sin(s.t * 9) * 0.2;
-    rock.emissiveIntensity = 1.7 + Math.sin(s.t * 3 + r.seed) * 0.4 + s.kick * 1.8;
-    r.armL.rotation.x -= s.kick * 1.5;
-    r.armL.rotation.z = 0.12;
-    r.armR.rotation.z = -0.12;
-  };
-  return r;
-}
-
-// --- Nox: lechuza de plumas azul noche, capa violeta y ballesta ---------------
-function nox() {
-  const r = baseRig(0.24, 1.55);
-  const featherMap = tex('mat-plumas.webp', { repeat: true });
-  featherMap.repeat.set(3, 2);
-  const featherN = tex('mat-plumas-n.webp', { repeat: true, data: true });
-  featherN.repeat.set(3, 2);
-  const feather = std(0xffffff, { map: featherMap, normalMap: featherN, normalScale: new THREE.Vector2(1.5, 1.5), roughness: 0.8 });
-  const navy = std(0x2f2f58, { roughness: 0.85 }), cream = std(0xeadfc6, { roughness: 0.8 });
-  const gold = std(0xe0a020, { roughness: 0.4, metalness: 0.3 }), teal = glow(0x25e6c0, 1.7);
-  const black = std(0x0d0d14, { roughness: 0.2 }), white = std(0xffffff, { roughness: 0.2 });
-  const purple = std(0x5a2d86, { roughness: 0.9, side: THREE.DoubleSide }), wood = std(0x6b4226), leather = std(0x5e3a1e);
-
-  for (const [leg, x] of [[r.legL, 0.15], [r.legR, -0.15]]) {
-    leg.position.x = x;
-    part(new THREE.CylinderGeometry(0.04, 0.04, 0.16, 6), gold, leg, 0, -0.1, 0);
-    for (const tx of [-0.06, 0, 0.06]) part(new THREE.BoxGeometry(0.04, 0.05, 0.16), gold, leg, tx, -0.215, 0.07).rotation.y = -tx * 4;
-  }
-  part(new THREE.SphereGeometry(0.4, 22, 16), feather, r.torso, 0, 0.34, 0).scale.set(1, 1.05, 0.92);
-  part(new THREE.SphereGeometry(0.31, 18, 14), cream, r.torso, 0, 0.3, 0.14).scale.set(0.9, 1, 0.7);
-  part(new THREE.TorusGeometry(0.385, 0.035, 6, 22).rotateX(PI / 2), leather, r.torso, 0, 0.2, 0.01);
-  part(new THREE.BoxGeometry(0.1, 0.09, 0.04), gold, r.torso, 0, 0.2, 0.39);
-  part(new RoundedBoxGeometry(0.14, 0.15, 0.1, 1, 0.03), leather, r.torso, 0.33, 0.15, 0.2);
-  part(new RoundedBoxGeometry(0.14, 0.15, 0.1, 1, 0.03), leather, r.torso, -0.33, 0.15, 0.2);
-  const cape = part(new THREE.ConeGeometry(0.58, 0.74, 14, 1, true, PI * 0.3, PI * 1.4), purple, r.torso, 0, 0.36, -0.04);
-  cape.scale.set(1, 1, 0.9);
-  part(new THREE.TorusGeometry(0.3, 0.08, 8, 20).rotateX(PI / 2), purple, r.torso, 0, 0.68, 0.02).scale.set(1.05, 1, 1);
-  part(new THREE.SphereGeometry(0.06, 10, 8), gold, r.torso, 0, 0.64, 0.33);
-
-  r.head.position.set(0, 1.0, 0.03);
-  part(new THREE.SphereGeometry(0.42, 24, 18), feather, r.head).scale.set(1.08, 0.92, 0.98);
-  for (const s of [1, -1]) {
-    const x = s * 0.17;
-    part(new THREE.SphereGeometry(0.18, 16, 12), cream, r.head, x, -0.01, 0.32).scale.set(1, 1.05, 0.4);
-    part(new THREE.SphereGeometry(0.115, 14, 12), teal, r.head, x, 0, 0.375).scale.set(1, 1, 0.5);
-    part(new THREE.SphereGeometry(0.058, 10, 8), black, r.head, x, 0, 0.425).scale.set(1, 1, 0.5);
-    part(new THREE.SphereGeometry(0.02, 6, 6), white, r.head, x + 0.035, 0.035, 0.45);
-    part(new THREE.BoxGeometry(0.25, 0.07, 0.1), navy, r.head, x * 1.05, 0.16, 0.36).rotation.z = s * 0.42;
-    part(new THREE.ConeGeometry(0.11, 0.36, 5), navy, r.head, s * 0.3, 0.38, -0.02).rotation.z = -s * 0.4;
-  }
-  part(new THREE.ConeGeometry(0.075, 0.18, 6).rotateX(PI * 0.62), gold, r.head, 0, -0.1, 0.4);
-
-  for (const [arm, x] of [[r.armL, 0.4], [r.armR, -0.4]]) {
-    arm.position.set(x, 0.54, 0);
-    part(new THREE.SphereGeometry(0.2, 12, 10), feather, arm, 0, -0.2, 0).scale.set(0.5, 1.3, 1);
-  }
-  const bow = new THREE.Group();
-  bow.position.set(0.04, -0.3, 0.28);
-  r.armR.add(bow);
-  part(new THREE.BoxGeometry(0.07, 0.07, 0.72), wood, bow);
-  part(new THREE.BoxGeometry(0.66, 0.05, 0.06), wood, bow, 0, 0.02, 0.26);
-  part(new THREE.BoxGeometry(0.03, 0.03, 0.5), teal, bow, 0, 0.06, 0.12);
-  r.armR.rotation.z = 0.25;
-
-  r.armSwing = 0.35;
-  r.kickArm = 0.6;
-  r.custom = (s) => {
-    cape.rotation.x = 0.06 + s.move * 0.28 + Math.sin(s.t * 3 + r.seed) * 0.04;
-    r.armL.rotation.z = -0.15 - Math.abs(Math.sin(s.phase)) * 0.5 * s.move;
-    r.armR.rotation.x = -0.25 - s.kick * 0.5;
-    r.head.rotation.z = Math.sin(s.t * 0.7 + r.seed) * 0.1 * (1 - s.move);
-  };
-  return r;
-}
-
-// --- Pompa: sapo alquimista con sombrero de bruja y arneses de cuero ---------
-function pompa() {
-  const r = baseRig(0.26, 1.6);
-  const skin = std(0xffffff, { map: frogTex(), roughness: 0.5 }), dgreen = std(0x4f8a22, { roughness: 0.55 });
-  const belly = std(0xe6d27a, { roughness: 0.6 }), eyeY = std(0xf2c81e, { roughness: 0.2 }), black = std(0x0d0d14, { roughness: 0.2 });
-  const purple = std(0x6a3a96, { roughness: 0.9 }), leather = std(0x7a4a26, { roughness: 0.7 }), tan = std(0xb08a52, { roughness: 0.9 });
-  const brass = std(0xc9962e, { metalness: 0.6, roughness: 0.35 });
-  const lens = std(0xbfe9ff, { roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.65 });
-  const pink = glow(0xff4fb0, 1.5), blue = glow(0x3fb8ff, 1.3), lime = glow(0x6dff5a, 1.3);
-
-  for (const [leg, x] of [[r.legL, 0.3], [r.legR, -0.3]]) {
-    leg.position.x = x;
-    part(new THREE.SphereGeometry(0.18, 12, 10), dgreen, leg, 0, -0.08, -0.02).scale.set(1, 1.05, 1.3);
-    part(new RoundedBoxGeometry(0.28, 0.07, 0.4, 1, 0.03), dgreen, leg, x > 0 ? 0.04 : -0.04, -0.225, 0.12);
-  }
-  part(new THREE.SphereGeometry(0.5, 24, 18), skin, r.torso, 0, 0.38, 0).scale.set(1.1, 0.9, 1);
-  part(new THREE.SphereGeometry(0.42, 18, 14), belly, r.torso, 0, 0.29, 0.15).scale.set(0.92, 0.82, 0.8);
-  part(new THREE.BoxGeometry(0.5, 0.03, 0.05), black, r.torso, 0, 0.56, 0.44);
-  part(new THREE.TorusGeometry(0.5, 0.045, 6, 26).rotateX(PI / 2), leather, r.torso, 0, 0.24, 0).scale.set(1.09, 1, 0.99);
-  part(new THREE.BoxGeometry(0.13, 0.11, 0.05), brass, r.torso, 0, 0.24, 0.49);
-  part(new RoundedBoxGeometry(0.44, 0.36, 0.22, 2, 0.06), leather, r.torso, 0, 0.44, -0.5);
-  part(new THREE.CylinderGeometry(0.1, 0.1, 0.5, 12).rotateZ(PI / 2), tan, r.torso, 0, 0.68, -0.5);
-  part(new THREE.SphereGeometry(0.08, 10, 8), blue, r.torso, -0.56, 0.22, 0.06);
-  part(new THREE.SphereGeometry(0.08, 10, 8), lime, r.torso, 0.54, 0.22, -0.12);
-
-  r.head.position.set(0, 0.72, 0.1);
-  const eyes = [];
-  for (const x of [0.23, -0.23]) {
-    const e = new THREE.Group();
-    e.position.set(x, 0.08, 0.02);
-    r.head.add(e);
-    part(new THREE.SphereGeometry(0.18, 14, 12), skin, e);
-    part(new THREE.SphereGeometry(0.145, 14, 12), eyeY, e, 0, 0.02, 0.07);
-    part(new THREE.SphereGeometry(0.085, 10, 8), black, e, 0, 0.03, 0.17).scale.set(1, 1, 0.55);
-    eyes.push(e);
-  }
-  // Sombrero de bruja con antiparras de bronce.
-  const hat = new THREE.Group();
-  hat.position.set(0, 0.25, -0.08);
-  hat.rotation.set(-0.16, 0, 0.06);
-  r.head.add(hat);
-  part(new THREE.CylinderGeometry(0.52, 0.56, 0.045, 22), purple, hat);
-  part(new THREE.ConeGeometry(0.31, 0.44, 18), purple, hat, 0, 0.23, 0);
-  const tip = part(new THREE.ConeGeometry(0.11, 0.26, 10), purple, hat, 0.1, 0.46, -0.02);
-  tip.rotation.z = -1.0;
-  part(new THREE.CylinderGeometry(0.3, 0.315, 0.08, 18), leather, hat, 0, 0.06, 0);
-  for (const x of [0.12, -0.12]) {
-    part(new THREE.TorusGeometry(0.085, 0.028, 6, 14), brass, hat, x, 0.12, 0.3).rotation.x = -0.35;
-    part(new THREE.CylinderGeometry(0.075, 0.075, 0.02, 12).rotateX(PI / 2), lens, hat, x, 0.12, 0.3).rotation.x = -0.35;
-  }
-
-  for (const [arm, x] of [[r.armL, 0.54], [r.armR, -0.54]]) {
-    arm.position.set(x, 0.44, 0.08);
-    part(new THREE.CylinderGeometry(0.065, 0.075, 0.3, 8), dgreen, arm, 0, -0.14, 0.02);
-    part(new THREE.SphereGeometry(0.09, 10, 8), dgreen, arm, 0, -0.3, 0.03);
-  }
-  const flask = new THREE.Group();
-  flask.position.set(0, -0.34, 0.14);
-  r.armR.add(flask);
-  part(new THREE.SphereGeometry(0.15, 14, 12), pink, flask);
-  part(new THREE.CylinderGeometry(0.045, 0.06, 0.14, 8), lens, flask, 0, 0.17, 0);
-  part(new THREE.CylinderGeometry(0.05, 0.05, 0.05, 8), leather, flask, 0, 0.26, 0);
-
-  r.armSwing = 0.7;
-  r.kickArm = 2.2;
-  r.custom = (s) => {
-    const blink = Math.sin(s.t * 0.9 + r.seed) > 0.985 ? 0.15 : 1;
-    for (const e of eyes) e.scale.y = blink;
-    r.torso.scale.y = 1 + Math.sin(s.t * 2.6 + r.seed) * 0.03;
-    flask.scale.setScalar(1 - s.kick * 0.6);
-    tip.rotation.z = -1.0 + Math.sin(s.t * 3 + r.seed) * 0.12 + s.move * 0.2;
-    r.hips.position.y += Math.abs(Math.sin(s.phase)) * 0.1 * s.move;
-  };
-  return r;
 }
 
 // --- Zip: conejo ninja --------------------------------------------------------
@@ -414,21 +104,24 @@ function zip() {
   return r;
 }
 
-// --- Tajo: zanjero con hacha ----------------------------------------------------
-// Su cuerpo no está hecho de primitivas: se arma con la silueta medida en su hoja de arte
-// (src/tajo-perfil.json) y se pinta proyectando esa misma hoja de frente, perfil y espalda.
+// --- Cuerpos armados desde la hoja de arte ---------------------------------------
+// Tuerca, Brasa, Nox, Pompa y Tajo no están hechos de primitivas: cada cuerpo se arma con la
+// silueta medida en su hoja de arte (src/perfiles/*.json, src/tajo-perfil.json) y se pinta
+// proyectando esa misma hoja de frente, perfil y espalda.
 
 // Cuerpo por rodajas: cada fila es [y, centroX, semiAncho, centroZ, semiFondo], de arriba a abajo.
 // `power` > 2 da secciones más cuadradas (torso con mochila); 2 es una elipse.
 function loft(rows, seg, power) {
-  const n = rows.length, e = 2 / power, pos = [], idx = [];
-  for (const [y, cx, hw, cz, hd] of rows)
+  const n = rows.length, e = 2 / power, pos = [], idx = [], ty = [];
+  for (const [y, cx, hw, cz, hd, texY] of rows)
     for (let k = 0; k < seg; k++) {
       const a = (k / seg) * PI * 2, c = Math.cos(a), sn = Math.sin(a);
       pos.push(cx + hw * Math.sign(c) * Math.abs(c) ** e, y, cz + hd * Math.sign(sn) * Math.abs(sn) ** e);
+      ty.push(texY ?? y); // altura de la hoja de donde toma el color (por defecto, la propia)
     }
   const top = pos.length / 3;
   pos.push(rows[0][1], rows[0][0], rows[0][3], rows[n - 1][1], rows[n - 1][0], rows[n - 1][3]);
+  ty.push(rows[0][5] ?? rows[0][0], rows[n - 1][5] ?? rows[n - 1][0]);
   for (let i = 0; i < n - 1; i++)
     for (let k = 0; k < seg; k++) {
       const p0 = i * seg + k, p1 = i * seg + ((k + 1) % seg), q0 = p0 + seg, q1 = p1 + seg;
@@ -440,21 +133,28 @@ function loft(rows, seg, power) {
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('ty', new THREE.Float32BufferAttribute(ty, 1));
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
 }
 
+// Filas extra que cierran en redondo el tope de una parte; toman el color de su primera fila.
+function domed(rows, h) {
+  const [y, cx, hw, cz, hd] = rows[0];
+  return [[1, 0.1], [0.94, 0.38], [0.78, 0.66], [0.5, 0.87], [0.2, 0.97]].map(([up, k]) => [y + h * up, cx, hw * k, cz, hd * k, y]).concat(rows);
+}
+
 // Coordenadas de cada vértice dentro de la hoja, para las tres vistas, y el peso de cada una.
 function projectSheet(g, d) {
-  const P = g.attributes.position, N = g.attributes.normal, [W, H] = d.hoja;
+  const P = g.attributes.position, N = g.attributes.normal, TY = g.attributes.ty, [W, H] = d.hoja;
   const uvF = [], uvB = [], uvS = [], w = [];
   for (let i = 0; i < P.count; i++) {
-    const x = P.getX(i) / d.u, y = P.getY(i) / d.u, z = P.getZ(i) / d.u;
+    const x = P.getX(i) / d.u, y = TY.getX(i) / d.u, z = P.getZ(i) / d.u;
     const v = 1 - (d.bot - y) / H;
     uvF.push((d.cxF + x) / W, v);
     uvB.push((d.cxB - x) / W, v);
-    uvS.push((d.czS + z) / W, v);
+    uvS.push((d.czS + (d.side ?? 1) * z) / W, v); // side -1: el perfil de la hoja mira a la izquierda
     const nx = N.getX(i), nz = N.getZ(i);
     const f = Math.max(0, nz) ** 3 + 0.002, b = Math.max(0, -nz) ** 3, sd = Math.abs(nx) ** 3, t = f + b + sd;
     w.push(f / t, b / t, sd / t);
@@ -466,6 +166,137 @@ function projectSheet(g, d) {
   return g;
 }
 
+// Esqueleto con un cuerpo por cada parte que tenga el perfil (cabeza, torso, brazos, piernas).
+function sheetRig(d, atlas, o = {}) {
+  const P = d.piv, hip = P.hip;
+  const r = baseRig(hip, d.alto + (o.extra ?? 0.05));
+  const art = projectedMaterial(tex(atlas), o.glow);
+  const put = (name, parent, px, py, seg, power) => {
+    let rows = d.parts[name];
+    if (!rows) return;
+    // Cabeza o torso que arrancan en una fila ancha: se cierran en redondo en vez de quedar planos.
+    const dome = name === 'head' ? o.dome : name === 'body' ? o.bodyDome : 0;
+    if (dome) rows = domed(rows, dome);
+    const m = new THREE.Mesh(projectSheet(loft(rows, seg, power), d), art);
+    m.position.set(-px, -py, 0); // la malla está en coordenadas del cuerpo entero
+    m.castShadow = true;
+    parent.add(m);
+  };
+  put('body', r.torso, 0, hip, 28, o.bodyPow ?? 2.3);
+  r.head.position.set(0, P.neck - hip, 0);
+  put('head', r.head, 0, P.neck, 28, o.headPow ?? 2.1);
+  for (const [name, grp, px] of [['legL', r.legL, P.legL], ['legR', r.legR, P.legR]]) {
+    grp.position.x = px;
+    put(name, grp, px, hip, 16, 2.2);
+  }
+  for (const [name, grp, px] of [['armL', r.armL, P.armL], ['armR', r.armR, P.armR]]) {
+    grp.position.set(px, P.shoulder - hip, 0);
+    put(name, grp, px, P.shoulder, 16, 2.1);
+  }
+  r.art = art;
+  r.headTop = d.parts.head[0][0] - P.neck; // tope de la cabeza, medido desde el cuello
+  return r;
+}
+
+// --- Tuerca: robot de taller. La antena va aparte, para que se mueva. -----------
+function tuerca() {
+  const r = sheetRig(P_TUERCA, 'hoja-tuerca.webp', { glow: [-1, 0, 1, 1.2], headPow: 2, bodyPow: 2.6 });
+  const steel = std(0xffffff, { map: tex('mat-acero.webp'), metalness: 0.75, roughness: 0.42, ...steelN() });
+  const ant = new THREE.Group();
+  ant.position.set(0, r.headTop - 0.02, 0);
+  r.head.add(ant);
+  part(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 6), steel, ant, 0, 0.1, 0);
+  part(new THREE.SphereGeometry(0.06, 12, 10), std(0xd0211c, { roughness: 0.25 }), ant, 0, 0.22, 0);
+  r.armSwing = 0.5;
+  r.kickArm = 0;
+  r.custom = (s) => {
+    ant.rotation.z = Math.sin(s.t * 6 + r.seed) * 0.12 + Math.sin(s.phase) * 0.2 * s.move;
+    // El brazo taladro apunta hacia adelante y retrocede con cada disparo.
+    r.armR.rotation.x = -0.6 - s.kick * 0.8 + Math.sin(s.phase) * 0.15 * s.move;
+    r.legL.rotation.x *= 0.7;
+    r.legR.rotation.x *= 0.7;
+    r.head.rotation.z = Math.sin(s.phase) * 0.04 * s.move;
+  };
+  return r;
+}
+
+// --- Brasa: gólem de lava. Las grietas brillan solas; la llama va aparte. --------
+function brasa() {
+  const r = sheetRig(P_BRASA, 'hoja-brasa.webp', { glow: [1, 0, -1, 1.5], headPow: 2.4, bodyPow: 2.5, extra: 0.35, dome: 0.07 });
+  const hot = glow(0xffb81a, 1.9), fire = glow(0xff5a0a, 1.5);
+  const flame = new THREE.Group();
+  flame.position.set(0, r.headTop, -0.03);
+  r.head.add(flame);
+  const f1 = part(new THREE.ConeGeometry(0.15, 0.4, 7), fire, flame, 0, 0.18, 0);
+  const f2 = part(new THREE.ConeGeometry(0.09, 0.3, 6), hot, flame, 0.02, 0.16, 0.03);
+  const f3 = part(new THREE.ConeGeometry(0.07, 0.24, 6), fire, flame, -0.11, 0.1, 0);
+  f1.castShadow = f2.castShadow = f3.castShadow = false;
+  const lava = r.art.userData.glow.value;
+  r.armSwing = 0.5;
+  r.kickArm = 0;
+  r.custom = (s) => {
+    const k = 1 + Math.sin(s.t * 11 + r.seed) * 0.16 + Math.sin(s.t * 17) * 0.1;
+    f1.scale.set(1, k, 1);
+    f2.scale.set(1, 2 - k, 1);
+    f3.rotation.z = 0.3 + Math.sin(s.t * 9) * 0.2;
+    lava.w = 1.4 + Math.sin(s.t * 3 + r.seed) * 0.3 + s.kick * 1.6; // la lava late y se enciende al atacar
+    r.armL.rotation.x -= s.kick * 1.4;
+    r.armR.rotation.x -= s.kick * 1.4;
+    r.legL.rotation.x *= 0.6;
+    r.legR.rotation.x *= 0.6;
+  };
+  return r;
+}
+
+// --- Nox: lechuza arquera. La ballesta 3D va delante, para que se vea a dónde apunta. --
+function nox() {
+  const d = P_NOX;
+  const r = sheetRig(d, 'hoja-nox.webp', { glow: [-1, 0, 1, 1.2], headPow: 2.2, bodyPow: 2.3, dome: 0.17, bodyDome: 0.1 });
+  const wood = std(0x6b4226), teal = glow(0x25e6c0, 1), navy = std(0x2c2b55, { roughness: 0.85 });
+  // Los mechones de las orejas van aparte: en la hoja son dos puntas sueltas.
+  for (const sd of [1, -1]) {
+    const tuft = part(new THREE.ConeGeometry(0.11, 0.34, 5), navy, r.head, sd * 0.25, r.headTop + 0.12, -0.02);
+    tuft.rotation.z = -sd * 0.42;
+  }
+  const bow = new THREE.Group();
+  bow.position.set(-0.06, 0.5 - d.piv.hip, 0.42);
+  r.torso.add(bow);
+  part(new THREE.BoxGeometry(0.07, 0.07, 0.62), wood, bow, 0, 0, 0.1);
+  part(new THREE.BoxGeometry(0.66, 0.05, 0.06), wood, bow, 0, 0.02, 0.34);
+  part(new THREE.BoxGeometry(0.025, 0.025, 0.3), teal, bow, 0, 0.055, 0.2);
+  r.armSwing = 0;
+  r.kickArm = 0;
+  r.custom = (s) => {
+    bow.position.z = 0.42 - s.kick * 0.14;
+    r.head.rotation.z = Math.sin(s.t * 0.7 + r.seed) * 0.08 * (1 - s.move);
+    r.torso.rotation.z = Math.sin(s.phase) * 0.07 * s.move; // camina balanceándose
+  };
+  return r;
+}
+
+// --- Pompa: sapo alquimista. El frasco de la mano va aparte: lo lanza al atacar. ---
+function pompa() {
+  const d = P_POMPA;
+  const r = sheetRig(d, 'hoja-pompa.webp', { headPow: 2.2, bodyPow: 2.3, bodyDome: 0.06 });
+  const pink = glow(0xff4fb0, 1.5), glass = std(0xbfe9ff, { roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.65 });
+  const flask = new THREE.Group();
+  flask.position.set(0.5, 0.74 - d.piv.hip, 0.24);
+  r.torso.add(flask);
+  part(new THREE.SphereGeometry(0.13, 14, 12), pink, flask);
+  part(new THREE.CylinderGeometry(0.04, 0.055, 0.12, 8), glass, flask, 0, 0.15, 0);
+  part(new THREE.CylinderGeometry(0.045, 0.045, 0.045, 8), std(0x7a4a26), flask, 0, 0.23, 0);
+  r.armSwing = 0;
+  r.kickArm = 0;
+  r.custom = (s) => {
+    r.torso.scale.y = 1 + Math.sin(s.t * 2.6 + r.seed) * 0.03; // respira
+    flask.scale.setScalar(1 - s.kick * 0.7);
+    r.hips.position.y += Math.abs(Math.sin(s.phase)) * 0.1 * s.move; // avanza a saltitos
+    r.head.rotation.z = Math.sin(s.phase) * 0.05 * s.move;
+  };
+  return r;
+}
+
+// --- Tajo: zanjero con hacha (su perfil es anterior y trae otro formato) ----------
 function tajo() {
   const d = TAJO, U = d.u, K = d.alto / 1.75; // K: escala de los accesorios
   const yOf = (px) => (d.bot - px) * U, xOf = (px) => (px - d.cxF) * U;
