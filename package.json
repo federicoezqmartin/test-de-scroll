@@ -1,5 +1,5 @@
 {
-  "name": "landing-scroll-drone",
+  "name": "tu-zanja-3d",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/quad-math.test.mjs",
-    "qa": "node qa/capture.mjs"
+    "test": "node qa/partida.mjs",
+    "qa": "node qa/capturas.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

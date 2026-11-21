@@ -97,7 +97,11 @@ npm install
 npm run dev        # desarrollo
 npm run build      # genera dist/
 npm run preview    # sirve dist/
+npm test           # juega una partida completa por personaje, sin ventana
+npm run qa         # capturas del menú y de las tres vistas en qa/out/
 ```
+
+Las pruebas necesitan `npx playwright install chromium` la primera vez. Para instalarlo en tu compu y trabajar con Claude Code ahí, ver `INSTALAR.md`.
 
 ## Dónde está cada cosa
 
@@ -128,7 +132,7 @@ El arte se generó con IA a partir de prompts y vive en dos carpetas:
 - `public/arte/`: lo que usa el juego (alrededor de 1,6 MB). Texturas de arena, piedra, cajón y pasto; el núcleo y el logo recortados; las fichas de los personajes (`ficha-*.webp`) que se ven en el menú; las hojas de personaje listas para proyectar (`hoja-*.webp`, `tajo-hoja.webp`); el material de acero; y los mapas de relieve `*-n.webp`.
 - `arte/referencias/`: copias reducidas de las imágenes originales, para seguir ajustando los modelos.
 
-`arte/procesar_arte.py` es el script que convierte los originales en los archivos de `public/arte/` (necesita Python con Pillow y numpy, y los PNG originales en la carpeta que indica la variable `U`).
+`arte/procesar_arte.py` es el script que convierte los originales (`arte/originales/`) en los archivos de `public/arte/`; necesita Python con Pillow y numpy.
 
 Dentro de la partida, cinco de los seis personajes se arman a partir de su hoja de arte:
 
