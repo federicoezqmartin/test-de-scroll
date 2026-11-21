@@ -7,6 +7,11 @@ export const DEFAULTS = {
   // juego
   playerName: 'Vos',
   difficulty: 'normal',
+  // cámara
+  view: 'arriba',
+  sens: 1,
+  fov: 90,
+  invertY: false,
   // gráficos
   quality: 'auto',
   bloom: true,
@@ -42,14 +47,23 @@ export const SECTIONS = [
     ],
   },
   {
+    title: 'Cámara',
+    items: [
+      { k: 'view', type: 'seg', label: 'Vista', opts: [['arriba', 'Arriba'], ['hombro', 'Al hombro'], ['primera', 'Primera persona']], note: 'Durante la partida se cambia con la tecla V. Al hombro y en primera persona, el mouse queda capturado para mirar; Esc lo suelta.' },
+      { k: 'sens', type: 'range', label: 'Sensibilidad', min: 0.2, max: 3, step: 0.1, fmt: (v) => v.toFixed(1) + '×', note: 'Del mouse o del dedo, al hombro y en primera persona.' },
+      { k: 'fov', type: 'range', label: 'Campo de visión', min: 70, max: 110, step: 1, fmt: (v) => v + '°', note: 'Al hombro y en primera persona.' },
+      { k: 'invertY', type: 'toggle', label: 'Invertir mirada vertical' },
+      { k: 'zoom', type: 'range', label: 'Distancia de cámara', min: 0.8, max: 1.3, step: 0.05, fmt: (v) => (v < 0.97 ? 'Cerca' : v > 1.03 ? 'Lejos' : 'Normal') + ' · ' + Math.round(v * 100) + '%', note: 'Arriba y al hombro.' },
+      { k: 'shake', type: 'range', label: 'Temblor de cámara', min: 0, max: 1.5, step: 0.1, fmt: (v) => (v === 0 ? 'No' : Math.round(v * 100) + '%') },
+    ],
+  },
+  {
     title: 'Gráficos',
     items: [
       { k: 'quality', type: 'seg', label: 'Calidad', opts: [['auto', 'Auto'], ['baja', 'Baja'], ['media', 'Media'], ['alta', 'Alta']], note: 'Auto baja sola un nivel si la partida no va fluida.' },
       { k: 'bloom', type: 'toggle', label: 'Resplandor', note: 'Brillo en lava, núcleos y disparos. No se aplica en calidad Baja.' },
-      { k: 'tilt', type: 'toggle', label: 'Desenfoque de maqueta', note: 'Solo en calidad Alta.' },
+      { k: 'tilt', type: 'toggle', label: 'Desenfoque de maqueta', note: 'Solo en calidad Alta y en la vista de arriba.' },
       { k: 'grade', type: 'toggle', label: 'Color de cine', note: 'Más contraste, viñeta y grano. No se aplica en calidad Baja.' },
-      { k: 'shake', type: 'range', label: 'Temblor de cámara', min: 0, max: 1.5, step: 0.1, fmt: (v) => (v === 0 ? 'No' : Math.round(v * 100) + '%') },
-      { k: 'zoom', type: 'range', label: 'Distancia de cámara', min: 0.8, max: 1.3, step: 0.05, fmt: (v) => (v < 0.97 ? 'Cerca' : v > 1.03 ? 'Lejos' : 'Normal') + ' · ' + Math.round(v * 100) + '%' },
       { k: 'gore', type: 'toggle', label: 'Sangre y manchas' },
       { k: 'fps', type: 'toggle', label: 'Mostrar cuadros por segundo' },
     ],

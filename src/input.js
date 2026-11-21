@@ -1,4 +1,6 @@
 // Entrada: teclado + mouse en escritorio, dos palancas en pantallas táctiles.
+// En las vistas al hombro y en primera persona el mouse queda capturado (pointer lock) y
+// sus movimientos giran la cámara; en táctil se mira arrastrando en la mitad libre.
 const KEYS = {
   KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1],
   KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0],
@@ -6,7 +8,7 @@ const KEYS = {
 const SUPER_KEYS = new Set(['Space', 'KeyE', 'KeyQ']);
 
 export class Input {
-  constructor({ canvas, stick, btnAttack, btnSuper, onPause }) {
+  constructor({ canvas, stick, btnAttack, btnSuper, onPause, onView, onLockChange, onLockLost }) {
     this.enabled = false;
     this.touch = false;
     this.lefty = false; // modo zurdo: la palanca va en la mitad derecha
@@ -19,12 +21,39 @@ export class Input {
     this.keys = new Set();
     this.stick = stick;
     this.btns = { attack: btnAttack, super: btnSuper };
-    this.t = { move: null, attack: null, super: null };
+    this.t = { move: null, attack: null, super: null, look: null };
     this.onPause = onPause;
+    this.canvas = canvas;
+    this.look = { x: 0, y: 0 }; // giro de cámara acumulado, en píxeles de mouse
+    this.lookMode = false; // la vista actual tiene cámara propia
+    this.wantLock = false; // el juego quiere el mouse capturado
+    this.locked = false;
+    this.lockLostAt = -1e9;
+    this.onLockChange = onLockChange || (() => {});
+    this.onLockLost = onLockLost || (() => {});
+
+    document.addEventListener('pointerlockchange', () => {
+      const was = this.locked;
+      this.locked = document.pointerLockElement === canvas;
+      if (was && !this.locked) {
+        this.lockLostAt = performance.now();
+        this.fire = false;
+        this.superHeld = false;
+        // Se soltó sin que el juego lo pidiera (Esc del navegador, cambio de pestaña): pausa.
+        if (this.wantLock) this.onLockLost();
+      }
+      this.onLockChange(this.locked);
+    });
 
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Escape' || e.code === 'KeyP') { if (!e.repeat) onPause(); return; }
+      if (e.code === 'Escape' || e.code === 'KeyP') {
+        // Con el mouse capturado, Esc lo suelta el navegador y la pausa llega por pointerlockchange.
+        const fromLock = e.code === 'Escape' && (document.pointerLockElement === canvas || performance.now() - this.lockLostAt < 400);
+        if (!e.repeat && !fromLock) onPause();
+        return;
+      }
       if (!this.enabled) return;
+      if (e.code === 'KeyV' && !e.repeat) { onView?.(); return; }
       if (KEYS[e.code]) this.setTouch(false);
       if (KEYS[e.code] || SUPER_KEYS.has(e.code)) e.preventDefault();
       if (e.repeat) return;
@@ -41,11 +70,19 @@ export class Input {
     window.addEventListener('blur', () => this.reset());
 
     window.addEventListener('mousemove', (e) => {
+      if (this.locked) {
+        // Algunos navegadores reportan saltos enormes sueltos: se recortan.
+        this.look.x += Math.max(-300, Math.min(300, e.movementX || 0));
+        this.look.y += Math.max(-300, Math.min(300, e.movementY || 0));
+        return;
+      }
       this.ndc.x = (e.clientX / window.innerWidth) * 2 - 1;
       this.ndc.y = -(e.clientY / window.innerHeight) * 2 + 1;
     });
     canvas.addEventListener('mousedown', (e) => {
       if (!this.enabled || this.touch) return;
+      // Sin el mouse capturado, el primer clic solo lo captura (no dispara).
+      if (this.wantLock && !this.locked) { this.requestLock(); return; }
       if (e.button === 0) this.fire = true;
       if (e.button === 2) this.superHeld = true;
     });
@@ -65,6 +102,28 @@ export class Input {
     document.addEventListener('touchcancel', (e) => this.onTouchEnd(e), opt);
   }
 
+  takeLook() {
+    const l = { x: this.look.x, y: this.look.y };
+    this.look.x = this.look.y = 0;
+    return l;
+  }
+
+  // Pide capturar el mouse. Solo funciona dentro de un gesto del usuario (clic, tecla).
+  requestLock() {
+    if (this.touch || this.locked || !this.canvas.requestPointerLock) return;
+    if (navigator.userActivation && !navigator.userActivation.isActive) return;
+    try {
+      const r = this.canvas.requestPointerLock();
+      if (r && r.catch) r.catch(() => {}); // rechazado: el próximo clic en la arena lo vuelve a pedir
+    } catch { /* sin captura de mouse */ }
+  }
+
+  setWantLock(v) {
+    this.wantLock = v;
+    if (!v && document.pointerLockElement === this.canvas) document.exitPointerLock();
+    else if (v) this.requestLock();
+  }
+
   setTouch(on) {
     if (this.touch === on) return;
     this.touch = on;
@@ -77,7 +136,8 @@ export class Input {
     this.superHeld = false;
     this.preview = null;
     this.move.x = this.move.z = 0;
-    this.t.move = this.t.attack = this.t.super = null;
+    this.t.move = this.t.attack = this.t.super = this.t.look = null;
+    this.look.x = this.look.y = 0;
     this.stick.classList.remove('on');
     for (const b of Object.values(this.btns)) b.classList.remove('aim');
     this.events.length = 0;
@@ -117,6 +177,9 @@ export class Input {
         this.stick.style.top = t.clientY + 'px';
         this.stick.classList.add('on');
         this.stick.firstElementChild.style.transform = 'translate(-50%,-50%)';
+      } else if (this.lookMode && !this.t.look) {
+        // La otra mitad de la pantalla, fuera de los botones, gira la cámara.
+        this.t.look = { id: t.identifier, x: t.clientX, y: t.clientY };
       }
     }
   }
@@ -125,6 +188,13 @@ export class Input {
     if (!this.enabled) return;
     e.preventDefault();
     for (const t of e.changedTouches) {
+      const lk = this.t.look;
+      if (lk && lk.id === t.identifier) {
+        this.look.x += (t.clientX - lk.x) * 1.8; // el dedo recorre menos que el mouse
+        this.look.y += (t.clientY - lk.y) * 1.8;
+        lk.x = t.clientX;
+        lk.y = t.clientY;
+      }
       const m = this.t.move;
       if (m && m.id === t.identifier) {
         let dx = t.clientX - m.sx, dy = t.clientY - m.sy;
@@ -157,6 +227,7 @@ export class Input {
 
   onTouchEnd(e) {
     for (const t of e.changedTouches) {
+      if (this.t.look && this.t.look.id === t.identifier) this.t.look = null;
       if (this.t.move && this.t.move.id === t.identifier) {
         this.t.move = null;
         this.move.x = this.move.z = 0;

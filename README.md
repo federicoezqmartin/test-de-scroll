@@ -21,9 +21,17 @@ Arena 3 contra 3 con vista cenital, en 3D real (three.js), que corre en el naveg
 | Zip (conejo ninja) | Asesino | Dos tajos cuerpo a cuerpo | Embestida instantánea |
 | Tajo (zanjero con hacha) | Embestidor | Hachazo: se lanza hacia adelante cortando | Zanja en línea que daña, empuja y lo cura |
 
+**Vistas** (Configuración → Cámara, o la tecla V durante la partida):
+
+- **Arriba:** la vista cenital de siempre.
+- **Al hombro:** cámara detrás del personaje, sobre el hombro derecho.
+- **Primera persona:** la cámara en los ojos del personaje; el cuerpo propio no se dibuja.
+
+Al hombro y en primera persona el mouse queda capturado para mirar (Esc lo suelta y pausa), hay una mira en el centro con la munición debajo, y moverse es relativo a hacia dónde mirás. La puntería sigue siendo sobre el piso, como en la vista de arriba: mirar arriba o abajo solo cambia a qué distancia caen los ataques en arco. Al morir la cámara pasa a la vista de arriba hasta que reaparecés. En celular se mira arrastrando en la mitad de la pantalla que no tiene la palanca, y tocar el botón de ataque dispara al rival que tengas adelante.
+
 **Controles**
 
-- Teclado y mouse: `WASD` o flechas para moverte, mouse para apuntar, clic para disparar, `Espacio` o clic derecho para el súper (mantené para ver a dónde va), `Esc` para pausar.
+- Teclado y mouse: `WASD` o flechas para moverte, mouse para apuntar (o para mirar, al hombro y en primera persona), clic para disparar, `Espacio` o clic derecho para el súper (mantené para ver a dónde va), `V` para cambiar de vista, `Esc` para pausar.
 - Celular: palanca izquierda para moverte; el botón rojo dispara solo al rival más cercano si lo tocás, o apunta si lo arrastrás. El botón de súper funciona igual.
 
 ## Interfaz de partida
@@ -44,7 +52,8 @@ Se abre desde el menú, la pausa o el engranaje del HUD, y se guarda en el naveg
 | Sección | Opciones |
 |---|---|
 | Juego | Tu nombre · dificultad de los bots (Fácil, Normal, Difícil) |
-| Gráficos | Calidad (Auto, Baja, Media, Alta) · resplandor · desenfoque de maqueta · color de cine · temblor de cámara · distancia de cámara · sangre · cuadros por segundo |
+| Cámara | Vista (Arriba, Al hombro, Primera persona) · sensibilidad · campo de visión · invertir mirada vertical · distancia de cámara · temblor de cámara |
+| Gráficos | Calidad (Auto, Baja, Media, Alta) · resplandor · desenfoque de maqueta · color de cine · sangre · cuadros por segundo |
 | Sonido | Volumen · silenciar |
 | Interfaz | Tamaño · minimapa · paneles de equipo · nombres · números de daño · aviso de dónde viene el daño · colores de equipo (azul y rojo, o azul y naranja para daltonismo) |
 | Controles táctiles | Modo zurdo · tamaño de los botones |

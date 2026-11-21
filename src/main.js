@@ -50,6 +50,9 @@ const input = new Input({
   btnAttack: document.getElementById('btn-attack'),
   btnSuper: document.getElementById('btn-super'),
   onPause: () => togglePause(),
+  onView: () => cycleView(),
+  onLockChange: () => syncLock(),
+  onLockLost: () => { if (state === 'match' && !paused) togglePause(); },
 });
 
 if (coarse) input.setTouch(true);
@@ -191,6 +194,7 @@ function toMenu() {
   ui.resetHud();
   ui.show('menu');
   resize();
+  syncLock();
 }
 
 function startMatch(heroId) {
@@ -204,6 +208,7 @@ function startMatch(heroId) {
       state = 'results';
       input.enabled = false;
       input.reset();
+      syncLock();
       ui.showResults(res);
     },
   });
@@ -213,9 +218,26 @@ function startMatch(heroId) {
   fpsWarm = 0;
   input.reset();
   input.enabled = true;
-  ui.setHints(input.touch || coarse);
+  ui.setHints(input.touch || coarse, settings.view);
   ui.show('match');
   resize();
+  syncLock();
+}
+
+// El mouse queda capturado solo jugando, sin pausa, en una vista con cámara propia.
+function syncLock() {
+  const cam = settings.view !== 'arriba';
+  input.lookMode = cam;
+  const want = cam && state === 'match' && !paused && !!match && match.state !== 'over' && !input.touch;
+  if (want !== input.wantLock) input.setWantLock(want);
+  ui.setLockHint(want && !input.locked);
+}
+
+// Tecla V: arriba → al hombro → primera persona → arriba.
+function cycleView() {
+  const order = ['arriba', 'hombro', 'primera'];
+  setSetting('view', order[(order.indexOf(settings.view) + 1) % order.length]);
+  ui.toast({ arriba: 'Vista de arriba', hombro: 'Vista al hombro', primera: 'Primera persona' }[settings.view]);
 }
 
 function togglePause() {
@@ -225,6 +247,7 @@ function togglePause() {
   input.enabled = !paused;
   if (paused) input.reset();
   ui.setPaused(paused, match);
+  syncLock(); // al seguir jugando (clic en el botón) vuelve a capturar el mouse
 }
 
 // Configuración: desde el menú, desde la pausa o desde el botón del HUD (que además pausa).
@@ -266,12 +289,17 @@ function applyQuality() {
 // Aplica la configuración a todo lo que depende de ella. k: lo que cambió (null = todo).
 function applySettings(k) {
   if (k === null || k === 'quality') applyQuality();
-  gfx.setOptions(settings);
+  // El desenfoque de maqueta solo tiene sentido mirando desde arriba.
+  gfx.setOptions({ ...settings, tilt: settings.tilt && settings.view === 'arriba' });
   audio.setVolume(settings.volume);
   audio.setMuted(settings.muted);
   input.lefty = settings.lefty;
   ui.applySettings();
   if (match) match.applySettings(settings);
+  if (k === 'view' || k === null) {
+    ui.setHints(input.touch || coarse, settings.view);
+    syncLock();
+  }
   if (k === 'hudScale' || k === 'lefty' || k === null) resize();
 }
 onSettings(applySettings);

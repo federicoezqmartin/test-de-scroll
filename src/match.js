@@ -37,6 +37,14 @@ const BLOOD = [0x8a0a0a, 0xb01010, 0x5e0505];
 const DIRT = [0x6b4a2a, 0x8a6a44, 0x4e3620];
 const qA = new THREE.Quaternion(), qB = new THREE.Quaternion(), vAxis = new THREE.Vector3();
 const DEFAULT_Q = { shadow: 2048, shadowRadius: 2.4, lights: 0, boost: 1, fxScale: 1 };
+// Vistas: 'arriba' (cenital), 'hombro' (tercera persona) y 'primera'. La puntería sigue siendo
+// plana en las tres: mirar arriba o abajo solo cambia a qué distancia cae lo que se tira en arco.
+const TOP_FOV = 36;
+const PITCH0 = { hombro: -0.22, primera: -0.14 };
+const PITCH_LIM = { hombro: [-1.05, 0.32], primera: [-1.35, 1.15] };
+const LOOK_K = 0.0023; // radianes por píxel de mouse, con sensibilidad 1
+const CENTER = new THREE.Vector2(0, 0);
+const WALL_H = 1.15; // alto de los muros, para que la cámara al hombro no se meta adentro
 
 export class Match {
   constructor({ heroId, input, hud, layer, onEnd, env = null, quality = null, settings = {} }) {
@@ -73,7 +81,19 @@ export class Match {
       scene.environment = env;
       scene.environmentIntensity = 0.38;
     }
-    this.camera = new THREE.PerspectiveCamera(36, 1, 1, 240);
+    this.camera = new THREE.PerspectiveCamera(TOP_FOV, 1, 1, 240);
+    this.yaw = Math.PI; // hacia dónde mira la cámara en las vistas al hombro y en primera persona
+    this.pitch = -0.15;
+    this.camMode = null; // vista que se está mostrando (al morir se ve desde arriba)
+    this.blend = 1;
+    this.camFrom = new THREE.Vector3();
+    this.lookFrom = new THREE.Vector3();
+    this.lookCur = new THREE.Vector3();
+    this.camPos = new THREE.Vector3();
+    this.camLook = new THREE.Vector3();
+    this.camDir = new THREE.Vector3();
+    this.fovFrom = TOP_FOV;
+    this.nearFrom = 1;
     this.camT = new THREE.Vector3();
     this.camDist = 17;
     this.limX = 6;
@@ -136,6 +156,8 @@ export class Match {
     foes.forEach((id, i) => this.addFighter(1, i, id, false, names.pop(), lanes[i]));
     this.player = this.fighters[0];
     this.camT.set(this.player.x, 0, this.player.z);
+    this.yaw = this.player.face;
+    this.pitch = PITCH0[this.view] ?? -0.15;
 
     this.buildIndicator();
     this.ray = new THREE.Raycaster();
@@ -155,6 +177,28 @@ export class Match {
     this.shakeScale = s.shake ?? 1;
     this.zoomUser = s.zoom ?? 1;
     this.showNumbers = s.dmgNumbers !== false;
+    const prev = this.view;
+    this.view = ['arriba', 'hombro', 'primera'].includes(s.view) ? s.view : 'arriba';
+    this.sens = s.sens ?? 1;
+    this.fovUser = s.fov ?? 90;
+    this.invertY = !!s.invertY;
+    // Al pasar a una vista con cámara propia, se arranca mirando hacia donde mira el personaje.
+    if (this.player && prev && prev !== this.view && this.view !== 'arriba') {
+      this.yaw = this.player.face;
+      this.pitch = PITCH0[this.view];
+    }
+  }
+
+  get firstPerson() { return this.view !== 'arriba'; }
+
+  // Dirección en pantalla (x a la derecha, z hacia abajo) a dirección del mundo. En la vista de
+  // arriba "arriba en la pantalla" es -z; en las otras, hacia donde mira la cámara.
+  toWorld(x, z, out) {
+    const yaw = this.firstPerson ? this.yaw : Math.PI;
+    const fx = Math.sin(yaw), fz = Math.cos(yaw), rx = -Math.cos(yaw), rz = Math.sin(yaw);
+    out.x = rx * x - fx * z;
+    out.z = rz * x - fz * z;
+    return out;
   }
 
   addFighter(team, slot, heroId, isPlayer, name, lane) {
@@ -206,7 +250,7 @@ export class Match {
     const aspect = w / h;
     this.camera.aspect = aspect;
     const perpH = Math.max(12, 11.5 / aspect);
-    this.camDist = perpH / (2 * Math.tan((this.camera.fov * DEG) / 2));
+    this.camDist = perpH / (2 * Math.tan((TOP_FOV * DEG) / 2));
     this.camera.updateProjectionMatrix();
     // Límites de cámara: que no se vea mar de más en los bordes de la isla.
     const halfD = perpH / 2 / 0.85, halfW = (perpH * aspect) / 2;
@@ -214,7 +258,14 @@ export class Match {
     this.limX = Math.max(0, W / 2 + 1.5 - halfW * 0.85);
     this.limZ1 = H / 2 + 1.3 - halfD * 0.8;
     this.limZ0 = Math.min(this.limZ1, -H / 2 - 1 + halfD * 0.9);
-    const half = (this.shadowHalf = Math.max(15, Math.min(26, perpH * 0.9)));
+    this.shadowHalfTop = Math.max(15, Math.min(26, perpH * 0.9));
+    this.setShadowHalf(this.camMode && this.camMode !== 'arriba' ? 20 : this.shadowHalfTop);
+    this.camera.updateProjectionMatrix();
+  }
+
+  setShadowHalf(half) {
+    if (half === this.shadowHalf) return;
+    this.shadowHalf = half;
     const sc = this.sun.shadow.camera;
     sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
     sc.near = 1; sc.far = 80;
@@ -283,32 +334,63 @@ export class Match {
     return this.ray.ray.intersectPlane(this.ground, this.tmp) || this.tmp.set(this.player.x, 0, this.player.z - 1);
   }
 
+  // Punto del piso bajo la mira (centro de la pantalla). Mirando al horizonte o más arriba,
+  // un punto lejano hacia adelante: así los ataques en arco van al máximo alcance.
+  aimPoint() {
+    const p = this.player, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    this.ray.setFromCamera(CENTER, this.camera);
+    const r = this.ray.ray;
+    if (r.direction.y < -0.01 && r.intersectPlane(this.ground, this.tmp)) {
+      const dx = this.tmp.x - p.x, dz = this.tmp.z - p.z;
+      if (Math.hypot(dx, dz) > 0.7 && dx * fx + dz * fz > 0) return this.tmp;
+    }
+    return this.tmp.set(p.x + fx * 40, 0, p.z + fz * 40);
+  }
+
   controlPlayer() {
     const p = this.player, inp = this.input;
     const events = inp.take();
+    const look = inp.takeLook();
+    const fp = this.firstPerson;
+    if (fp && p.alive) {
+      const k = LOOK_K * this.sens;
+      this.yaw -= look.x * k;
+      this.pitch -= look.y * k * (this.invertY ? -1 : 1);
+      const [lo, hi] = PITCH_LIM[this.view];
+      this.pitch = clamp(this.pitch, lo, hi);
+    }
     if (this.state !== 'play') {
       p.mvx = p.mvz = 0;
       this.setIndicator(null);
       return;
     }
-    p.mvx = inp.move.x;
-    p.mvz = inp.move.z;
+    const w = this.toWorld(inp.move.x, inp.move.z, { x: 0, z: 0 });
+    p.mvx = w.x;
+    p.mvz = w.z;
     if (!p.alive) return this.setIndicator(null);
+    if (fp) {
+      // El cuerpo mira hacia donde mira la cámara, aunque camine para el costado.
+      p.aim = this.yaw;
+      p.aimHold = Math.max(p.aimHold, 0.12);
+    }
 
     if (inp.touch) {
+      const v = { x: 0, z: 0 };
       for (const ev of events) {
         const sup = ev.kind === 'super';
         const spec = sup ? p.def.super : p.def.attack;
-        const a = ev.auto ? this.autoAim(p, spec) : { x: ev.x, z: ev.z, dist: ev.mag * spec.range };
+        // Tocar sin arrastrar apunta solo; en las vistas con cámara propia, solo a lo que tenés adelante.
+        const a = ev.auto ? this.autoAim(p, spec, fp ? this.yaw : null, 1.2) : { ...this.toWorld(ev.x, ev.z, v), dist: ev.mag * spec.range };
         if (sup) this.trySuper(p, a.x, a.z, a.dist);
         else this.tryAttack(p, a.x, a.z, a.dist);
       }
       const pv = inp.preview;
       if (!pv || (pv.kind === 'super' && p.super < 1)) return this.setIndicator(null);
       const spec = pv.kind === 'super' ? p.def.super : p.def.attack;
-      this.setIndicator({ spec, isSuper: pv.kind === 'super', x: pv.x, z: pv.z, dist: pv.mag * spec.range });
+      this.toWorld(pv.x, pv.z, v);
+      this.setIndicator({ spec, isSuper: pv.kind === 'super', x: v.x, z: v.z, dist: pv.mag * spec.range });
     } else {
-      const g = this.mouseGround();
+      const g = fp ? this.aimPoint() : this.mouseGround();
       let dx = g.x - p.x, dz = g.z - p.z;
       const d = Math.hypot(dx, dz) || 1;
       dx /= d; dz /= d;
@@ -319,14 +401,17 @@ export class Match {
     }
   }
 
-  autoAim(f, spec) {
+  // yaw y cone: si se pasan, solo cuentan los rivales dentro de ese ángulo alrededor de yaw.
+  autoAim(f, spec, yaw = null, cone = Math.PI) {
     let best = null, bd = spec.range * 1.25 + (spec.aoe || spec.radius || 0);
     for (const e of this.fighters) {
       if (e.team === f.team || !e.alive || !e.visTo[f.team]) continue;
+      if (yaw !== null && Math.abs(angDiff(Math.atan2(e.x - f.x, e.z - f.z), yaw)) > cone) continue;
       const d = Math.hypot(e.x - f.x, e.z - f.z);
       if (d < bd) { bd = d; best = e; }
     }
-    if (!best) return { x: Math.sin(f.face), z: Math.cos(f.face), dist: spec.range * 0.75 };
+    const a0 = yaw ?? f.face;
+    if (!best) return { x: Math.sin(a0), z: Math.cos(a0), dist: spec.range * 0.75 };
     const tt = spec.kind === 'lob' ? spec.flight : spec.speed ? bd / spec.speed : 0;
     const dx = best.x + best.velx * tt * 0.8 - f.x, dz = best.z + best.velz * tt * 0.8 - f.z;
     const l = Math.hypot(dx, dz) || 1;
@@ -635,7 +720,7 @@ export class Match {
       audio.play('hurt');
       this.shake = Math.max(this.shake, 0.22);
       this.hud.hurt();
-      if (hl > 0.01) this.hud.hitFrom(hx, hz);
+      if (hl > 0.01) this.hud.hitFrom(hx, hz, this.camMode && this.camMode !== 'arriba' ? this.yaw : Math.PI);
     } else if (src && src.isPlayer) audio.play('hit');
     else this.sfx('hit', e, 0.5);
     if (e.hp <= 0) this.kill(e, src);
@@ -838,6 +923,8 @@ export class Match {
     f.face = f.moveAng = f.aim = f.team === ME ? Math.PI : 0;
     this.fx.ring(f.x, f.z, 0.3, 1.6, TEAMS[f.team].color, 0.5);
     if (f.isPlayer) {
+      this.yaw = f.face;
+      this.pitch = PITCH0[this.view] ?? -0.15;
       this.hud.setRespawn(null);
       audio.play('respawn');
     }
@@ -1196,9 +1283,11 @@ export class Match {
     for (const f of this.fighters) {
       const seen = f.alive && (f.team === ME || f.visTo[ME]);
       const root = f.rig.root;
-      root.visible = seen || !!f.corpse;
-      f.ring.visible = seen && !f.ghost;
-      f.blob.visible = seen;
+      // En primera persona no se dibuja el cuerpo propio (la cámara está adentro de la cabeza).
+      const inside = f.isPlayer && this.camMode === 'primera' && this.blend > 0.6;
+      root.visible = (seen || !!f.corpse) && !inside;
+      f.ring.visible = seen && !f.ghost && !inside;
+      f.blob.visible = seen && !inside;
       if (seen) {
         root.position.set(f.x, f.airY, f.z);
         root.rotation.y = f.face;
@@ -1223,48 +1312,123 @@ export class Match {
       }
     }
 
-    // cámara
-    const a = 1 - Math.exp(-rawDt * 7);
-    const tx = clamp(p.x, -this.limX, this.limX);
-    const tz = clamp(p.z - 1, this.limZ0, this.limZ1);
-    this.camT.x += (tx - this.camT.x) * a;
-    this.camT.z += (tz - this.camT.z) * a;
-    this.zoom += ((this.state === 'intro' ? 1.25 : 1) - this.zoom) * (1 - Math.exp(-rawDt * 2.5));
-    this.shake = Math.max(0, this.shake - rawDt * 2.2);
-    const sh = this.shake * this.shake * 1.6 * this.shakeScale;
-    this.zoomKick = Math.max(0, this.zoomKick - rawDt * 3.2);
-    const d = this.camDist * this.zoom * this.zoomUser * (1 - 0.05 * Math.sin(this.zoomKick * Math.PI));
-    this.camera.position.set(
-      this.camT.x + (Math.random() - 0.5) * sh,
-      d * 0.85 + (Math.random() - 0.5) * sh,
-      this.camT.z + d * 0.527 + (Math.random() - 0.5) * sh,
-    );
-    this.camera.lookAt(this.camT.x, 0.4, this.camT.z);
-    this.camera.updateMatrixWorld();
-    // El sol sigue a la cámara de a pasos de un texel de sombra, para que no titilen los bordes.
-    const st = this.snapT.set(this.camT.x, 0, this.camT.z);
-    const texel = (this.shadowHalf * 2) / this.q.shadow;
-    const rx = st.dot(this.lightRight), ry = st.dot(this.lightUp);
-    st.addScaledVector(this.lightRight, Math.round(rx / texel) * texel - rx).addScaledVector(this.lightUp, Math.round(ry / texel) * texel - ry);
-    this.sun.target.position.copy(st);
-    this.sun.position.copy(st).addScaledVector(this.sunDir, 34);
+    this.updateCamera(rawDt);
 
-    // etiquetas
-    const v = this.tmp;
+    // etiquetas: en las vistas con cámara propia se achican con la distancia y la propia no va
+    const v = this.tmp, top = this.camMode === 'arriba', cam = this.camera.position;
     for (const f of this.fighters) {
       const seen = f.alive && (f.team === ME || f.visTo[ME]);
-      if (!seen) { f.tag.place(0, 0, false); continue; }
+      if (!seen || (!top && f.isPlayer)) { f.tag.place(0, 0, false); continue; }
+      let k = 1;
+      if (!top) {
+        const dist = Math.hypot(f.x - cam.x, f.z - cam.z);
+        if (dist > 32) { f.tag.place(0, 0, false); continue; }
+        k = clamp(7 / Math.max(dist, 0.1), 0.5, 1.1);
+      }
       v.set(f.x, f.rig.height + 0.3 + f.airY, f.z).project(this.camera);
-      f.tag.place((v.x * 0.5 + 0.5) * this.vw, (-v.y * 0.5 + 0.5) * this.vh, v.z < 1);
+      f.tag.place((v.x * 0.5 + 0.5) * this.vw, (-v.y * 0.5 + 0.5) * this.vh, v.z < 1, k);
       f.tag.sync(f);
     }
-    v.set(p.x, 0.9, p.z).project(this.camera);
-    this.hud.anchor((v.x * 0.5 + 0.5) * this.vw, (-v.y * 0.5 + 0.5) * this.vh);
+    if (top) {
+      v.set(p.x, 0.9, p.z).project(this.camera);
+      this.hud.anchor((v.x * 0.5 + 0.5) * this.vw, (-v.y * 0.5 + 0.5) * this.vh);
+    } else this.hud.anchor(this.vw / 2, this.vh / 2);
     this.hud.setSuper(p.super);
     this.hud.frame(this, rawDt);
     w.update(this.time);
     this.ambient(dt);
     this.fx.update(dt, this.camera, this.vw, this.vh);
+  }
+
+  // Cámara de cada vista. Al cambiar de vista (o al morir, que se pasa a la de arriba) la
+  // posición, el punto mirado y el campo de visión se mezclan durante 0,4 s.
+  updateCamera(rawDt) {
+    const p = this.player, cam = this.camera, w = this.world;
+    const mode = this.firstPerson && p.alive ? this.view : 'arriba';
+    const a = 1 - Math.exp(-rawDt * 7);
+    const tx = mode === 'arriba' ? clamp(p.x, -this.limX, this.limX) : p.x;
+    const tz = mode === 'arriba' ? clamp(p.z - 1, this.limZ0, this.limZ1) : p.z;
+    this.camT.x += (tx - this.camT.x) * a;
+    this.camT.z += (tz - this.camT.z) * a;
+    this.zoom += ((this.state === 'intro' ? 1.25 : 1) - this.zoom) * (1 - Math.exp(-rawDt * 2.5));
+    this.shake = Math.max(0, this.shake - rawDt * 2.2);
+    this.zoomKick = Math.max(0, this.zoomKick - rawDt * 3.2);
+    const kick = Math.sin(this.zoomKick * Math.PI);
+    const pos = this.camPos, look = this.camLook;
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    let fov = TOP_FOV, near = 1;
+    if (mode === 'arriba') {
+      const d = this.camDist * this.zoom * this.zoomUser * (1 - 0.05 * kick);
+      pos.set(this.camT.x, d * 0.85, this.camT.z + d * 0.527);
+      look.set(this.camT.x, 0.4, this.camT.z);
+    } else {
+      const cp = Math.cos(this.pitch);
+      const dir = this.camDir.set(fx * cp, Math.sin(this.pitch), fz * cp);
+      const eye = p.rig.height * 0.78 + p.airY;
+      // campo de visión horizontal elegido, pasado a vertical según la forma de la pantalla
+      const hfov = (this.fovUser - (mode === 'hombro' ? 8 : 0)) * DEG;
+      fov = clamp((2 * Math.atan(Math.tan(hfov / 2) / cam.aspect)) / DEG, 45, 95) * (1 - 0.06 * kick);
+      if (mode === 'primera') {
+        const bob = Math.sin(p.phase * 2) * 0.035 * p.moveAmt;
+        pos.set(p.x + fx * 0.12, eye + bob, p.z + fz * 0.12);
+        look.copy(pos).add(dir);
+        near = 0.05;
+      } else {
+        // Al hombro: la cámara gira alrededor de un punto sobre el hombro derecho.
+        const rx = -fz, rz = fx;
+        const piv = look.set(p.x + rx * 0.78, eye + 0.42, p.z + rz * 0.78);
+        let dist = 3.3 * this.zoomUser;
+        for (let t = 0.3; t <= dist; t += 0.15) {
+          const x = piv.x - dir.x * t, y = piv.y - dir.y * t, z = piv.z - dir.z * t;
+          if (y < WALL_H && w.shotBlockedAt(x, z)) { dist = Math.max(0.3, t - 0.25); break; }
+        }
+        pos.copy(piv).addScaledVector(dir, -dist);
+        pos.y = Math.max(0.35, pos.y);
+        look.addScaledVector(dir, 6);
+        near = 0.1;
+      }
+    }
+    if (mode !== this.camMode) {
+      if (this.camMode) {
+        this.blend = 0;
+        this.camFrom.copy(cam.position);
+        this.lookFrom.copy(this.lookCur);
+        this.fovFrom = cam.fov;
+        this.nearFrom = cam.near;
+      }
+      this.camMode = mode;
+      this.setShadowHalf(mode === 'arriba' ? this.shadowHalfTop : 20);
+      this.hud.setView(mode);
+    }
+    this.blend = Math.min(1, this.blend + rawDt * 2.5);
+    const k = this.blend * this.blend * (3 - 2 * this.blend);
+    if (k < 1) {
+      cam.position.lerpVectors(this.camFrom, pos, k);
+      this.lookCur.lerpVectors(this.lookFrom, look, k);
+      fov = this.fovFrom + (fov - this.fovFrom) * k;
+      near = Math.min(near, this.nearFrom);
+    } else {
+      cam.position.copy(pos);
+      this.lookCur.copy(look);
+    }
+    const sh = this.shake * this.shake * 1.6 * this.shakeScale * (mode === 'arriba' ? 1 : 0.3);
+    if (sh > 0) cam.position.add(this.tmp.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(sh));
+    if (Math.abs(cam.fov - fov) > 0.01 || cam.near !== near) {
+      cam.fov = fov;
+      cam.near = near;
+      cam.updateProjectionMatrix();
+    }
+    cam.lookAt(this.lookCur);
+    cam.updateMatrixWorld();
+
+    // El sol sigue a la vista de a pasos de un texel de sombra, para que no titilen los bordes.
+    // En las vistas con cámara propia, las sombras se centran adelante del jugador.
+    const st = mode === 'arriba' ? this.snapT.set(this.camT.x, 0, this.camT.z) : this.snapT.set(p.x + fx * 9, 0, p.z + fz * 9);
+    const texel = (this.shadowHalf * 2) / this.q.shadow;
+    const rx = st.dot(this.lightRight), ry = st.dot(this.lightUp);
+    st.addScaledVector(this.lightRight, Math.round(rx / texel) * texel - rx).addScaledVector(this.lightUp, Math.round(ry / texel) * texel - ry);
+    this.sun.target.position.copy(st);
+    this.sun.position.copy(st).addScaledVector(this.sunDir, 34);
   }
 
   // Vida de fondo: motas en el aire, vapor del reactor, brasas y destellos de los núcleos.

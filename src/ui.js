@@ -99,10 +99,15 @@ export class UI {
     this.onSelect(id, byUser);
   }
 
-  setHints(touch) {
+  setHints(touch, view = 'arriba') {
+    const cam = view !== 'arriba';
     const t = touch
-      ? 'Palanca: moverte · Botón de ataque: tocá para disparar solo o arrastrá para apuntar'
-      : 'WASD: moverte · Mouse: apuntar · Clic: disparar · Espacio o clic derecho: súper · Esc: pausa';
+      ? cam
+        ? 'Palanca: moverte · Arrastrá en la otra mitad: mirar · Botón de ataque: tocá para disparar al que tengas adelante o arrastrá para apuntar'
+        : 'Palanca: moverte · Botón de ataque: tocá para disparar solo o arrastrá para apuntar'
+      : cam
+        ? 'WASD: moverte · Mouse: mirar · Clic: disparar · Espacio o clic derecho: súper · V: cambiar vista · Esc: pausa'
+        : 'WASD: moverte · Mouse: apuntar · Clic: disparar · Espacio o clic derecho: súper · V: cambiar vista · Esc: pausa';
     $('keys-hint').textContent = t;
     $('pause-hint').textContent = t;
   }
@@ -327,13 +332,22 @@ export class UI {
     const am = Math.round(p.ammo * 20);
     if (am !== L.ammo) {
       L.ammo = am;
-      const segs = $('me-ammo').children;
-      for (let i = 0; i < segs.length; i++) {
-        const v = Math.max(0, Math.min(1, p.ammo - i));
-        segs[i].firstChild.style.width = v * 100 + '%';
-        segs[i].classList.toggle('full', v >= 1);
+      // misma munición en la tarjeta y debajo de la mira
+      for (const box of [$('me-ammo'), document.querySelector('#crosshair .ch-ammo')]) {
+        const segs = box.children;
+        for (let i = 0; i < segs.length; i++) {
+          const v = Math.max(0, Math.min(1, p.ammo - i));
+          segs[i].firstChild.style.width = v * 100 + '%';
+          segs[i].classList.toggle('full', v >= 1);
+        }
       }
+      $('crosshair').classList.toggle('empty', p.ammo < 1);
     }
+    const kick = p.kick > 0.55;
+    if (kick !== L.kick) { L.kick = kick; $('crosshair').classList.toggle('kick', kick); }
+    // en primera persona el escudo de reaparición se ve como un borde celeste en la pantalla
+    const shield = match.camMode === 'primera' && p.alive && p.shieldT > 0;
+    if (shield !== L.shield) { L.shield = shield; this.hud.classList.toggle('shielded', shield); }
     if (p.cores !== L.cores) {
       L.cores = p.cores;
       $('me-cores').hidden = p.cores === 0;
@@ -366,17 +380,23 @@ export class UI {
 
   setFps(n) { $('fps').textContent = n + ' fps'; }
 
+  // Vista que se está mostrando: decide si hay mira en el centro de la pantalla.
+  setView(mode) { document.body.dataset.view = mode; }
+
+  setLockHint(on) { $('lockhint').hidden = !on; }
+
   // Posición en pantalla del jugador: ahí se centra el aviso de daño.
   anchor(x, y) { $('hitdir').style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`; }
 
-  // dx, dz: dirección del mundo desde la que vino el golpe (hacia el jugador).
-  hitFrom(dx, dz) {
+  // dx, dz: dirección del mundo hacia la que empujó el golpe. yaw: hacia dónde mira la cámara
+  // (PI en la vista de arriba, donde "arriba en la pantalla" es -z).
+  hitFrom(dx, dz, yaw = Math.PI) {
     if (!settings.hitDir) return;
     const box = $('hitdir');
     while (box.children.length > 3) box.firstChild.remove();
     const arc = el('i');
-    // el arco apunta arriba; el golpe viene del lado contrario al empujón
-    arc.style.transform = `rotate(${(Math.atan2(-dx, dz) * 180) / Math.PI}deg)`;
+    // el arco apunta arriba; se gira hacia el lado del que vino el golpe (contrario al empujón)
+    arc.style.transform = `rotate(${((yaw - Math.atan2(-dx, -dz)) * 180) / Math.PI}deg)`;
     arc.addEventListener('animationend', () => arc.remove());
     box.append(arc);
   }
@@ -406,9 +426,10 @@ export class UI {
     this.layer.append(root);
     const c = { hp: -1, cores: -1, ammo: -1, vis: false, stealth: false };
     return {
-      place(x, y, vis) {
+      // k: escala extra (las etiquetas lejanas se achican en las vistas con cámara propia)
+      place(x, y, vis, k = 1) {
         if (vis !== c.vis) { c.vis = vis; root.style.display = vis ? '' : 'none'; }
-        if (vis) root.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-100%) scale(${ui.hs})`;
+        if (vis) root.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-100%) scale(${(ui.hs * k).toFixed(3)})`;
       },
       sync(g) {
         const h = Math.ceil(g.hp);
@@ -539,6 +560,8 @@ export class UI {
     $('banner').hidden = true;
     $('toast').hidden = true;
     $('vignette').classList.remove('low');
+    this.hud.classList.remove('shielded');
+    $('lockhint').hidden = true;
     this.layer.textContent = '';
   }
 
