@@ -27,6 +27,8 @@ Arena 3 contra 3 con vista cenital, en 3D real (three.js), que corre en el naveg
 - **Al hombro:** cámara detrás del personaje, sobre el hombro derecho.
 - **Primera persona:** la cámara en los ojos del personaje; el cuerpo propio no se dibuja.
 
+Al hombro y en primera persona la arena cambia para que lo que frena los disparos también tape la vista: los muros suben uno o dos bloques de piedra, los cajones se apilan de a dos y el pasto crece; en la vista de arriba todo vuelve a quedar bajo, para no tapar a los personajes. El cambio es animado. Arriba hay cielo con sol y nubes, y alrededor islas a lo lejos; el horizonte se funde con la niebla. Los nombres de los rivales que quedan detrás de un muro no se muestran.
+
 Al hombro y en primera persona el mouse queda capturado para mirar (Esc lo suelta y pausa), hay una mira en el centro con la munición debajo, y moverse es relativo a hacia dónde mirás. La puntería sigue siendo sobre el piso, como en la vista de arriba: mirar arriba o abajo solo cambia a qué distancia caen los ataques en arco. Al morir la cámara pasa a la vista de arriba hasta que reaparecés. En celular se mira arrastrando en la mitad de la pantalla que no tiene la palanca, y tocar el botón de ataque dispara al rival que tengas adelante.
 
 **Controles**

@@ -8,6 +8,8 @@ export const shaderTime = { value: 0 };
 
 // Posición (x, z) e intensidad de hasta 6 luchadores visibles: el pasto se abre a su paso.
 export const grassFighters = { value: Array.from({ length: 6 }, () => new THREE.Vector3(0, 0, 0)) };
+// Alto del pasto (1 en la vista de arriba; más alto en las vistas con cámara propia).
+export const grassHeight = { value: 1 };
 // Ondas expansivas (x, z, radio, fuerza): aplastan el pasto hacia afuera un instante.
 export const grassShocks = { value: Array.from({ length: 2 }, () => new THREE.Vector4(0, 0, 1, 0)) };
 
@@ -134,8 +136,9 @@ export function grassMaterial() {
     s.uniforms.uTime = shaderTime;
     s.uniforms.uFighters = grassFighters;
     s.uniforms.uShocks = grassShocks;
+    s.uniforms.uGrassH = grassHeight;
     s.vertexShader = s.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uFighters[6];\nuniform vec4 uShocks[2];\nvarying float vHgt;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uFighters[6];\nuniform vec4 uShocks[2];\nuniform float uGrassH;\nvarying float vHgt;')
       .replace('#include <project_vertex>', /* glsl */ `
         vec4 mvPosition = vec4(transformed, 1.0);
         vec3 gRoot = vec3(0.0);
@@ -163,7 +166,7 @@ export function grassMaterial() {
           flatK = max(flatK, k * 0.8);
         }
         mvPosition.xz += bend * hgt * hgt;
-        mvPosition.y *= 1.0 - flatK * 0.5;
+        mvPosition.y *= uGrassH * (1.0 - flatK * 0.5);
         mvPosition = modelViewMatrix * mvPosition;
         gl_Position = projectionMatrix * mvPosition;`);
     s.fragmentShader = s.fragmentShader
@@ -219,6 +222,48 @@ export function projectedMaterial(atlas, glow = [0, 0, 0, 0]) {
         totalEmissiveRadiance += pj * glowK * uGlow.w;`);
   };
   return m;
+}
+
+// --- Cielo ---------------------------------------------------------------------
+// Domo alrededor de la cámara: degradé del horizonte al cenit, sol con halo y nubes que avanzan.
+// Debajo del horizonte toma el color de la niebla, así el mar lejano se funde con el cielo.
+export function skyMaterial(sunDir, haze) {
+  return new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { uTime: shaderTime, uSun: { value: sunDir.clone().normalize() }, uHaze: { value: new THREE.Color(haze) } },
+    vertexShader: /* glsl */ `
+      varying vec3 vDir;
+      void main() {
+        vDir = position;
+        vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        gl_Position = p.xyww; // siempre en el fondo
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uTime; uniform vec3 uSun; uniform vec3 uHaze;
+      varying vec3 vDir;
+      ${NOISE}
+      float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += vnoise(p) * a; p = p * 2.03 + 7.1; a *= 0.5; } return v; }
+      void main() {
+        vec3 d = normalize(vDir);
+        float h = d.y;
+        vec3 zenith = vec3(0.04, 0.17, 0.50), mid = vec3(0.17, 0.42, 0.78);
+        vec3 col = mix(uHaze, mid, smoothstep(0.0, 0.22, h));
+        col = mix(col, zenith, smoothstep(0.2, 0.85, h));
+        float s = max(dot(d, uSun), 0.0);
+        col += vec3(1.0, 0.82, 0.55) * (pow(s, 6.0) * 0.28 + pow(s, 60.0) * 0.6);
+        col += vec3(4.0, 3.5, 2.6) * smoothstep(0.9993, 0.9997, s);
+        if (h > 0.0) {
+          vec2 uv = d.xz / (h + 0.12) * 0.55 + vec2(uTime * 0.006, uTime * 0.003);
+          float c = smoothstep(0.47, 0.74, fbm(uv * 1.6));
+          float lit = 0.75 + 0.25 * s;
+          col = mix(col, vec3(0.96, 0.95, 0.92) * lit, c * smoothstep(0.02, 0.18, h) * 0.85);
+        }
+        col = mix(col, uHaze, smoothstep(0.03, -0.05, h));
+        gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
 }
 
 // --- Escudo de reaparición ----------------------------------------------------

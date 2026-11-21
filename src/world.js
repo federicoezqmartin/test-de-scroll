@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { MAP_HALF } from './data.js';
 import { tex } from './assets.js';
-import { waterMaterial, seaMaterial, grassMaterial } from './shaders.js';
+import { waterMaterial, seaMaterial, grassMaterial, grassHeight } from './shaders.js';
 
 export const T = { FLOOR: 0, WALL: 1, CRATE: 2, WATER: 3, BUSH: 4, CORE: 5 };
 const CHAR = { '.': T.FLOOR, '#': T.WALL, X: T.CRATE, '~': T.WATER, g: T.BUSH, M: T.CORE };
@@ -87,6 +87,7 @@ export class World {
     this.version++;
     const hide = this.hideMatrix;
     this.crateMesh.setMatrixAt(k.n, hide);
+    this.crateMesh.setMatrixAt(k.n2, hide);
     this.crateMesh.instanceMatrix.needsUpdate = true;
     this.aoMesh.setMatrixAt(k.ao, hide);
     this.aoMesh.instanceMatrix.needsUpdate = true;
@@ -217,7 +218,7 @@ export class World {
   build() {
     const { W, H } = this;
     const rand = rng(7);
-    const dummy = new THREE.Object3D();
+    const dummy = (this.dummy = new THREE.Object3D());
     const col = new THREE.Color();
 
     // Base de cada baldosa (hace de junta oscura); las de agua van hundidas.
@@ -294,7 +295,9 @@ export class World {
       walls.push([this.cx(W), this.cz(r), 0.6, 1]);
     }
 
-    // Muros de piedra.
+    // Muros de piedra. Cada muro interior tiene uno o dos bloques más que, en las vistas al hombro
+    // y en primera persona, suben desde adentro del bloque de abajo (ver setTall): así tapa la
+    // vista lo mismo que tapa los disparos. En la vista de arriba quedan escondidos.
     const wallGeo = this.keep(new RoundedBoxGeometry(0.985, 1, 0.985, 2, 0.07));
     const pos = wallGeo.attributes.position;
     const shadeAttr = new Float32Array(pos.count * 3);
@@ -307,9 +310,22 @@ export class World {
       map: tex('piedra.webp'), normalMap: tex('piedra-n.webp', { data: true }), normalScale: new THREE.Vector2(1.6, 1.6),
       roughness: 0.88, vertexColors: true,
     }));
-    const wallMesh = new THREE.InstancedMesh(wallGeo, wallMat, walls.length);
-    wallMesh.castShadow = wallMesh.receiveShadow = true;
     const stone = [0xffffff, 0xe9eef3, 0xf4efe6];
+    this.wallStacks = [];
+    this.stackTop = new Map(); // baldosa -> alto del muro bajo y cuánto suma apilado
+    let extra = 0;
+    for (const [x, z, h, border] of walls) {
+      const blocks = [];
+      if (!border) {
+        blocks.push({ h: Math.min(h - 0.02, 0.84 + rand() * 0.1), rot: Math.floor(rand() * 4), col: stone[Math.floor(rand() * 3)] });
+        if (rand() < 0.4) blocks.push({ h: Math.min(h - 0.02, 0.5 + rand() * 0.3), rot: Math.floor(rand() * 4), col: stone[Math.floor(rand() * 3)] });
+      }
+      this.wallStacks.push({ x, z, h, border, blocks, first: walls.length + extra });
+      if (!border) this.stackTop.set(this.row(z) * W + this.col(x), { h, extra: blocks.reduce((a, b) => a + b.h, 0) });
+      extra += blocks.length;
+    }
+    const wallMesh = (this.wallMesh = new THREE.InstancedMesh(wallGeo, wallMat, walls.length + extra));
+    wallMesh.castShadow = wallMesh.receiveShadow = true;
     walls.forEach(([x, z, h, border], n) => {
       dummy.position.set(x, h / 2, z);
       dummy.scale.set(1, h, 1);
@@ -319,6 +335,7 @@ export class World {
       col.set(border ? 0xb9c2cc : stone[Math.floor(rand() * 3)]);
       wallMesh.setColorAt(n, col);
     });
+    for (const w of this.wallStacks) w.blocks.forEach((b, k) => wallMesh.setColorAt(w.first + k, col.set(b.col)));
     dummy.rotation.set(0, 0, 0);
     this.group.add(wallMesh);
 
@@ -328,7 +345,8 @@ export class World {
       const crateMat = this.keep(new THREE.MeshStandardMaterial({
         map: tex('cajon.webp'), normalMap: tex('cajon-n.webp', { data: true }), normalScale: new THREE.Vector2(1.4, 1.4), roughness: 0.8,
       }));
-      const crateMesh = (this.crateMesh = new THREE.InstancedMesh(crateGeo, crateMat, crates.length));
+      // Cada cajón trae otro encima que sube en las vistas con cámara propia (instancias crates.length+n).
+      const crateMesh = (this.crateMesh = new THREE.InstancedMesh(crateGeo, crateMat, crates.length * 2));
       crateMesh.castShadow = crateMesh.receiveShadow = true;
       crates.forEach(([x, z], n) => {
         dummy.position.set(x, 0.47, z);
@@ -352,7 +370,13 @@ export class World {
     this.hideMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
     this.crates = new Map(); // baldosa -> { vida, instancia del cajón, instancia de su sombra }
     const firstCrateAo = aoList.length - 1 - crates.length;
-    crates.forEach(([x, z], n) => this.crates.set(this.row(z) * W + this.col(x), { hp: 1600, n, ao: firstCrateAo + n }));
+    crates.forEach(([x, z], n) => this.crates.set(this.row(z) * W + this.col(x), {
+      hp: 1600, n, n2: crates.length + n, ao: firstCrateAo + n, x, z,
+      rot: rand() * 0.6 - 0.3, jx: (rand() - 0.5) * 0.06, jz: (rand() - 0.5) * 0.06,
+    }));
+    this.tall = -1; // 0: todo bajo (vista de arriba) · 1: muros, cajones y pasto altos
+    this.tallTarget = 0;
+    this.setTall(0);
     aoList.forEach(([x, z], n) => {
       dummy.position.set(x, 0.006, z);
       dummy.scale.set(1, 1, 1);
@@ -489,9 +513,89 @@ export class World {
     });
 
     this.buildReactor();
+    this.buildHorizon(rand);
   }
 
   // Reactor: tanque de vidrio verde entre dos aros de metal remachado.
+  // Islas lejanas alrededor, para que en las vistas con cámara propia haya horizonte.
+  buildHorizon(rand) {
+    const geo = this.keep(new THREE.IcosahedronGeometry(1, 2));
+    const p = geo.attributes.position, colors = new Float32Array(p.count * 3), c = new THREE.Color();
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      // relieve irregular y pasto arriba, roca abajo
+      const n = 1 + 0.18 * Math.sin(x * 5.1 + z * 3.7) + 0.12 * Math.sin(x * 9.3 - y * 7.1 + z * 2.3);
+      p.setXYZ(i, x * n, Math.max(y, -0.35) * n, z * n);
+      c.set(y > 0.35 ? 0x4f8f3a : y > 0.05 ? 0x7d8a52 : 0x7a6a58);
+      colors.set([c.r, c.g, c.b], i * 3);
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.computeVertexNormals();
+    const mat = this.keep(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
+    const N = 14, mesh = new THREE.InstancedMesh(geo, mat, N), d = new THREE.Object3D();
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2 + (rand() - 0.5) * 0.35, r = 85 + rand() * 55;
+      const big = 5 + rand() * 13;
+      d.position.set(Math.cos(a) * r, -3.2, Math.sin(a) * r);
+      d.scale.set(big * (1 + rand() * 0.8), big * (0.35 + rand() * 0.55), big * (0.8 + rand() * 0.6));
+      d.rotation.set(0, rand() * 6.3, 0);
+      d.updateMatrix();
+      mesh.setMatrixAt(i, d.matrix);
+      mesh.setColorAt(i, c.set(0xffffff).offsetHSL(0, 0, (rand() - 0.5) * 0.12));
+    }
+    mesh.frustumCulled = false;
+    this.group.add(mesh);
+  }
+
+  // Alto de muros, cajones y pasto (0 bajo, 1 alto). Los bloques de más suben desde adentro
+  // del de abajo, que es un poco más ancho, así que en 0 quedan escondidos.
+  setTall(t) {
+    if (t === this.tall) return;
+    this.tall = t;
+    const d = this.dummy, wm = this.wallMesh;
+    for (const w of this.wallStacks) {
+      let top = w.h;
+      w.blocks.forEach((b, k) => {
+        const cy = top + b.h / 2;
+        d.position.set(w.x, w.h / 2 + (cy - w.h / 2) * t, w.z);
+        d.scale.set(0.965, b.h, 0.965);
+        d.rotation.set(0, b.rot * (Math.PI / 2), 0);
+        d.updateMatrix();
+        wm.setMatrixAt(w.first + k, d.matrix);
+        top += b.h;
+      });
+    }
+    wm.instanceMatrix.needsUpdate = true;
+    if (this.crateMesh) {
+      for (const k of this.crates.values()) {
+        if (k.hp <= 0) continue;
+        d.position.set(k.x + k.jx * t, 0.47 + 0.9 * t, k.z + k.jz * t);
+        d.scale.setScalar(0.92);
+        d.rotation.set(0, k.rot, 0);
+        d.updateMatrix();
+        this.crateMesh.setMatrixAt(k.n2, d.matrix);
+      }
+      this.crateMesh.instanceMatrix.needsUpdate = true;
+    }
+    d.rotation.set(0, 0, 0);
+    grassHeight.value = 1 + 0.75 * t;
+  }
+
+  // Alto de lo que hay en un punto ahora mismo (para que la cámara al hombro no se meta adentro).
+  heightAt(x, z) {
+    const c = this.col(x), r = this.row(z);
+    if (c < -1 || r < -1 || c > this.W || r > this.H) return 0; // mar
+    if (c < 0 || r < 0 || c >= this.W || r >= this.H) return 0.85; // borde bajo de la arena
+    const t = Math.max(0, this.tall), type = this.type(c, r);
+    if (type === T.WALL) {
+      const st = this.stackTop.get(r * this.W + c);
+      return st ? st.h + st.extra * t + 0.05 : 1.1;
+    }
+    if (type === T.CRATE) return 0.96 + 0.9 * t;
+    if (type === T.CORE) return 1.8;
+    return 0;
+  }
+
   buildReactor() {
     const g = new THREE.Group();
     const metal = this.keep(new THREE.MeshStandardMaterial({ map: tex('mat-acero.webp'), color: 0x8f8a80, roughness: 0.5, metalness: 0.7 }));
@@ -535,7 +639,11 @@ export class World {
     this.group.add(g);
   }
 
-  update(time) {
+  update(time, dt = 0) {
+    if (this.tall !== this.tallTarget) {
+      const step = dt * 2.6, t = this.tall;
+      this.setTall(t < this.tallTarget ? Math.min(this.tallTarget, t + step) : Math.max(this.tallTarget, t - step));
+    }
     this.coreOrb.rotation.y = time * 1.4;
     this.coreOrb.rotation.x = time * 0.8;
     this.coreOrb.position.y = 0.93 + Math.sin(time * 2.2) * 0.1;

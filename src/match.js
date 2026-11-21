@@ -6,7 +6,7 @@ import { World } from './world.js';
 import { Fx } from './fx.js';
 import { audio } from './audio.js';
 import { Bot } from './ai.js';
-import { shaderTime, grassFighters, grassShocks, shieldMaterial, zoneMaterial, indicatorMaterial } from './shaders.js';
+import { shaderTime, grassFighters, grassShocks, shieldMaterial, zoneMaterial, indicatorMaterial, skyMaterial } from './shaders.js';
 import { Debris } from './physics.js';
 import { SKILL, TEAM_PALETTES } from './settings.js';
 
@@ -44,7 +44,7 @@ const PITCH0 = { hombro: -0.22, primera: -0.14 };
 const PITCH_LIM = { hombro: [-1.05, 0.32], primera: [-1.35, 1.15] };
 const LOOK_K = 0.0023; // radianes por píxel de mouse, con sensibilidad 1
 const CENTER = new THREE.Vector2(0, 0);
-const WALL_H = 1.15; // alto de los muros, para que la cámara al hombro no se meta adentro
+const HAZE = 0x9ccbe0; // color del horizonte: cielo bajo, niebla y mar lejano se funden en él
 
 export class Match {
   constructor({ heroId, input, hud, layer, onEnd, env = null, quality = null, settings = {} }) {
@@ -75,8 +75,8 @@ export class Match {
     this.vh = 1;
 
     const scene = (this.scene = new THREE.Scene());
-    scene.background = new THREE.Color(0x0f6f86);
-    scene.fog = new THREE.Fog(0x0f6f86, 70, 150);
+    scene.background = new THREE.Color(HAZE);
+    scene.fog = new THREE.Fog(HAZE, 70, 150);
     if (env) {
       scene.environment = env;
       scene.environmentIntensity = 0.38;
@@ -118,6 +118,13 @@ export class Match {
     this.shadowHalf = 15;
     this.snapT = new THREE.Vector3();
 
+    this.own = []; // geometrías y materiales propios de la partida, para liberarlos al salir
+    this.sky = new THREE.Mesh(this.keep(new THREE.SphereGeometry(200, 32, 16)), this.keep(skyMaterial(this.sunDir, HAZE)));
+    this.sky.renderOrder = -1;
+    this.sky.frustumCulled = false;
+    this.sky.userData.noAO = true;
+    scene.add(this.sky);
+
     this.world = new World(scene);
     this.fx = new Fx(scene, layer, q);
     this.debris = new Debris(scene, this.world, {
@@ -136,7 +143,6 @@ export class Match {
     this.zones = [];
     this.cores = [];
     this.fighters = [];
-    this.own = [];
 
     this.markerGeo = this.keep(new THREE.RingGeometry(0.46, 0.6, 32).rotateX(-Math.PI / 2));
     this.shieldGeo = this.keep(new THREE.SphereGeometry(0.95, 24, 16));
@@ -1322,7 +1328,9 @@ export class Match {
       let k = 1;
       if (!top) {
         const dist = Math.hypot(f.x - cam.x, f.z - cam.z);
-        if (dist > 32) { f.tag.place(0, 0, false); continue; }
+        // Rivales detrás de un muro o un cajón: con los muros altos no se los ve, así que su nombre tampoco.
+        const hidden = f.team !== ME && w.tall > 0.5 && !w.shotClear(cam.x, cam.z, f.x, f.z);
+        if (dist > 32 || hidden) { f.tag.place(0, 0, false); continue; }
         k = clamp(7 / Math.max(dist, 0.1), 0.5, 1.1);
       }
       v.set(f.x, f.rig.height + 0.3 + f.airY, f.z).project(this.camera);
@@ -1335,7 +1343,7 @@ export class Match {
     } else this.hud.anchor(this.vw / 2, this.vh / 2);
     this.hud.setSuper(p.super);
     this.hud.frame(this, rawDt);
-    w.update(this.time);
+    w.update(this.time, rawDt);
     this.ambient(dt);
     this.fx.update(dt, this.camera, this.vw, this.vh);
   }
@@ -1380,7 +1388,7 @@ export class Match {
         let dist = 3.3 * this.zoomUser;
         for (let t = 0.3; t <= dist; t += 0.15) {
           const x = piv.x - dir.x * t, y = piv.y - dir.y * t, z = piv.z - dir.z * t;
-          if (y < WALL_H && w.shotBlockedAt(x, z)) { dist = Math.max(0.3, t - 0.25); break; }
+          if (y < w.heightAt(x, z)) { dist = Math.max(0.3, t - 0.25); break; }
         }
         pos.copy(piv).addScaledVector(dir, -dist);
         pos.y = Math.max(0.35, pos.y);
@@ -1397,6 +1405,7 @@ export class Match {
         this.nearFrom = cam.near;
       }
       this.camMode = mode;
+      this.world.tallTarget = mode === 'arriba' ? 0 : 1; // muros, cajones y pasto crecen fuera de la vista de arriba
       this.setShadowHalf(mode === 'arriba' ? this.shadowHalfTop : 20);
       this.hud.setView(mode);
     }
@@ -1420,6 +1429,7 @@ export class Match {
     }
     cam.lookAt(this.lookCur);
     cam.updateMatrixWorld();
+    this.sky.position.copy(cam.position);
 
     // El sol sigue a la vista de a pasos de un texel de sombra, para que no titilen los bordes.
     // En las vistas con cámara propia, las sombras se centran adelante del jugador.
