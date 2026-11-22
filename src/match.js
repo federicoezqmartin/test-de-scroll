@@ -9,11 +9,16 @@ import { Bot } from './ai.js';
 import { shaderTime, grassFighters, grassShocks, shieldMaterial, zoneMaterial, indicatorMaterial, skyMaterial } from './shaders.js';
 import { Debris } from './physics.js';
 import { SKILL, TEAM_PALETTES } from './settings.js';
+import { ViewModel } from './viewmodel.js';
 
 const R = 0.4; // radio de un luchador
 const DEG = Math.PI / 180;
 const TAU = Math.PI * 2;
 const ME = 0; // equipo del jugador
+const NO_OFF = { x: 0, y: 0, z: 0 };
+// Lo que tira el jugador en primera persona nace achicado: recién salido del arma está a un
+// metro del ojo y taparía media pantalla. Recupera su tamaño en los primeros metros.
+const NEAR_K = 0.4;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const angDiff = (a, b) => {
   let d = (a - b) % TAU;
@@ -164,6 +169,12 @@ export class Match {
     this.camT.set(this.player.x, 0, this.player.z);
     this.yaw = this.player.face;
     this.pitch = PITCH0[this.view] ?? -0.15;
+    // Arma vista en primera persona. Cuelga de la cámara, así que la cámara va en la escena.
+    scene.add(this.camera);
+    this.vm = new ViewModel(heroId, this.camera);
+    this.vm.rig.fxU.uRim.value.copy(this.player.rig.fxU.uRim.value);
+    this.gunPos = new THREE.Vector3();
+    this.offV = new THREE.Vector3();
 
     this.buildIndicator();
     this.ray = new THREE.Raycaster();
@@ -432,6 +443,22 @@ export class Match {
     this.indDisc = new THREE.Mesh(this.keep(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2)), this.indMatC);
     this.indFans = new Map();
     g.add(this.indRect, this.indDisc);
+    // Arco punteado de los ataques que van por el aire (frasco, salto), para las vistas con cámara propia.
+    this.arcN = 18;
+    this.arcMat = this.keep(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false }));
+    const dotGeo = this.keep(new THREE.SphereGeometry(1, 8, 6));
+    this.arcDots = this.keep(new THREE.InstancedMesh(dotGeo, this.arcMat, this.arcN));
+    this.arcDots.frustumCulled = false;
+    // Copia tenue que se ve a través de muros y cajones: el frasco pasa por encima.
+    this.arcGhostMat = this.keep(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthTest: false, depthWrite: false, toneMapped: false }));
+    const ghost = this.keep(new THREE.InstancedMesh(dotGeo, this.arcGhostMat, this.arcN));
+    ghost.instanceMatrix = this.arcDots.instanceMatrix;
+    ghost.frustumCulled = false;
+    ghost.renderOrder = 5;
+    this.arcDots.add(ghost);
+    this.arcDots.visible = false;
+    this.arcM = new THREE.Matrix4();
+    g.add(this.arcDots);
     g.renderOrder = 4;
     g.visible = false;
     this.scene.add(g);
@@ -461,7 +488,7 @@ export class Match {
     }
     const lenR = this.indMatR.uniforms.uLen, lenC = this.indMatC.uniforms.uLen;
     const s = a.spec;
-    this.indRect.visible = this.indDisc.visible = false;
+    this.indRect.visible = this.indDisc.visible = this.arcDots.visible = false;
     for (const f of this.indFans.values()) f.visible = false;
     const showFan = (deg, range) => {
       const f = this.fan(deg);
@@ -493,8 +520,28 @@ export class Match {
         this.indDisc.scale.setScalar((lenC.value = s.aoe || s.radius));
         this.indRect.visible = true;
         this.indRect.scale.set(0.1, 1, (lenR.value = d));
+        // Desde atrás o desde los ojos el disco en el piso no alcanza para ver por dónde pasa.
+        if (this.camMode !== 'arriba' && (s.kind === 'lob' || s.kind === 'leap')) this.setArc(s.kind, d, a.isSuper);
       }
     }
+  }
+
+  // Los puntos corren hacia donde va a caer y siguen la misma curva que el frasco o el salto.
+  setArc(kind, d, sup) {
+    const m = this.arcM, n = this.arcN, run = (this.time * 1.4) % 1;
+    this.arcMat.color.set(sup ? 0xffe14a : 0xffffff);
+    this.arcGhostMat.color.copy(this.arcMat.color);
+    for (let i = 0; i < n; i++) {
+      const u = (i + run) / n;
+      const y = kind === 'lob' ? 0.9 + Math.sin(u * Math.PI) * 3.2 - u * 0.7 : 0.6 + Math.sin(u * Math.PI) * 3.4;
+      // Los primeros puntos quedan pegados a la cámara: nacen chiquitos.
+      const e = clamp((u - 0.05) / 0.15, 0, 1);
+      const sc = 0.06 * e * e * (3 - 2 * e);
+      m.makeScale(sc, sc, sc).setPosition(0, y - 0.05, d * u);
+      this.arcDots.setMatrixAt(i, m);
+    }
+    this.arcDots.instanceMatrix.needsUpdate = true;
+    this.arcDots.visible = true;
   }
 
   // -------------------------------------------------------------- combate --
@@ -503,12 +550,14 @@ export class Match {
     audio.play(name, vol * clamp(1 - d / 17, 0, 1) ** 1.4);
   }
 
-  markAttack(f, dx, dz) {
+  markAttack(f, dx, dz, sup = false) {
     f.aim = Math.atan2(dx, dz);
     f.aimHold = 0.5;
     f.lastActT = this.time;
     f.revealT = Math.max(f.revealT, 0.9);
     f.kick = 1;
+    f.atkN = (f.atkN || 0) + 1; // la vista en primera persona anima el arma con cada ataque nuevo
+    f.atkSup = sup;
   }
 
   tryAttack(f, dx, dz, dist) {
@@ -525,10 +574,14 @@ export class Match {
     if (this.state !== 'play' || !f.alive || f.action || f.super < 1) return false;
     f.super = 0;
     f.superTold = false;
-    this.markAttack(f, dx, dz);
+    this.markAttack(f, dx, dz, true);
     if (f.team === ME || f.visTo[ME]) {
-      this.fx.ring(f.x, f.z, 0.5, 2.2, 0xffe14a, 0.4);
-      this.fx.flash(f.x, 1.3, f.z, 0xffe14a, 28, 0.35);
+      // El anillo en el piso, visto desde los ojos, es una franja amarilla que cruza la pantalla.
+      const own = f.isPlayer && this.vm.root.visible;
+      if (!own) this.fx.ring(f.x, f.z, 0.5, 2.2, 0xffe14a, 0.4);
+      // Una luz en el centro del personaje quedaría pegada al arma y la encandilaría: va más adelante.
+      const ahead = own ? 2 : 0;
+      this.fx.flash(f.x + dx * ahead, 1.3, f.z + dz * ahead, 0xffe14a, 28, 0.35);
       this.fx.text(f.x, f.rig.height + 0.9, f.z, f.def.super.name.toUpperCase() + '!', 'super');
     }
     if (f.isPlayer) this.zoomKick = 1;
@@ -555,13 +608,15 @@ export class Match {
         const t = this.clampToArena(f.x + dx * d, f.z + dz * d);
         const color = f.team === ME ? SHOT_COLOR[s.visual] : TEAMS[1].shot;
         const mesh = this.fx.projectile(s.visual, color);
-        mesh.position.set(f.x, 1, f.z);
+        const off = this.gunOffset(f, f.x, 0.9, f.z);
+        mesh.position.set(f.x + off.x, 0.9 + off.y, f.z + off.z);
+        if (off !== NO_OFF) mesh.scale.setScalar(NEAR_K);
         const mark = new THREE.Mesh(this.fx.geos.disc, zoneMaterial(color, 'warn'));
         mark.renderOrder = 2;
         mark.position.set(t.x, 0.05, t.z);
         mark.scale.setScalar(s.aoe);
         this.scene.add(mark);
-        this.lobs.push({ fx: f.x, fz: f.z, tx: t.x, tz: t.z, t: 0, dur: s.flight, spec: s, owner: f, team: f.team, mesh, mark, color });
+        this.lobs.push({ fx: f.x, fz: f.z, tx: t.x, tz: t.z, t: 0, dur: s.flight, spec: s, owner: f, team: f.team, mesh, mark, color, off });
         break;
       }
       case 'melee':
@@ -628,7 +683,8 @@ export class Match {
     }
     this.debris.impulse(f.x + dx * len * 0.5, f.z + dz * len * 0.5, len * 0.6 + 1, 5);
     if (f.team === ME || f.visTo[ME]) {
-      for (let d = 0.5; d < len; d += 0.45) {
+      const d0 = f.isPlayer && this.vm.root.visible ? 1.4 : 0.5; // en primera persona, los primeros terrones saltarían en la cara
+      for (let d = d0; d < len; d += 0.45) {
         const x = f.x + dx * d, z = f.z + dz * d;
         this.debris.add('rock', x, 0.1, z, (Math.random() - 0.5) * 3 + dz * (Math.random() - 0.5) * 4, 3.5 + Math.random() * 3, (Math.random() - 0.5) * 3 - dx * (Math.random() - 0.5) * 4, { size: 0.07 + Math.random() * 0.12, color: DIRT[Math.floor(Math.random() * 3)], life: 6 });
         this.fx.burst(x, 0.15, z, { n: 5, color: [0x6b4a2a, 0x9a6e3c, 0xd9b46a, 0x3a2a1c], speed: 2.6, up: 4.5, life: 0.55, size: 0.15, spread: s.width * 0.3, hot: false });
@@ -647,14 +703,16 @@ export class Match {
     const color = f.team === ME ? SHOT_COLOR[s.visual] : TEAMS[1].shot;
     const mesh = this.fx.projectile(s.visual, color);
     const x = f.x + dx * 0.55, z = f.z + dz * 0.55;
-    mesh.position.set(x, 0.8, z);
+    const off = this.gunOffset(f, x, 0.8, z, angDiff(ang, f.aim) > 0.01 ? 1 : 0);
+    mesh.position.set(x + off.x, 0.8 + off.y, z + off.z);
+    if (off !== NO_OFF) mesh.scale.setScalar(NEAR_K);
     mesh.rotation.y = ang;
     f.kick = 1;
     const recoil = s.pierce ? 3 : s.dmg > 800 ? 1.7 : 0.5; // el arma empuja hacia atrás al que dispara
     f.kx -= dx * recoil;
     f.kz -= dz * recoil;
     if (f.team === ME || f.visTo[ME]) {
-      this.fx.burst(x, 0.8, z, { n: 4, color: [color, 0xffffff], speed: 2.5, up: 1, life: 0.2, size: 0.08, vx: dx * 4, vz: dz * 4 });
+      this.fx.burst(mesh.position.x, mesh.position.y, mesh.position.z, { n: 4, color: [color, 0xffffff], speed: 2.5, up: 1, life: 0.2, size: 0.08, vx: dx * 4, vz: dz * 4 });
       if (s.visual === 'bolt') {
         // casquillo que salta hacia el costado
         const side = Math.random() < 0.5 ? 1 : -1;
@@ -663,16 +721,32 @@ export class Match {
     }
     this.projectiles.push({
       x, z, dx, dz, speed: s.speed, left: s.range - 0.55, r: s.radius, dmg: s.dmg, owner: f, team: f.team,
-      pierce: !!s.pierce, knock: s.knock || 0, hit: new Set(), mesh, color, visual: s.visual, trail: 0,
+      pierce: !!s.pierce, knock: s.knock || 0, hit: new Set(), mesh, color, visual: s.visual, trail: 0, off, gone: 0,
     });
+  }
+
+  // En primera persona lo que tira el jugador sale del arma que se ve en pantalla. Es solo dónde
+  // se dibuja: el disparo sigue saliendo del centro del personaje y la diferencia se achica
+  // en los primeros metros (ver visualOff).
+  gunOffset(f, x, y, z, i = 0) {
+    const m = f.isPlayer ? this.vm.muzzleWorld(this.gunPos, i) : null;
+    return m ? { x: m.x - x, y: m.y - y, z: m.z - z } : NO_OFF;
+  }
+
+  visualOff(off, k) {
+    const e = (1 - clamp(k, 0, 1)) ** 2;
+    return this.offV.set(off.x * e, off.y * e, off.z * e);
   }
 
   meleeHit(f, s, i) {
     if (!f.alive) return;
     if (i > 0) this.sfx(s.sfx, f, 0.9);
     f.kick = 1;
+    f.hitN = (f.hitN || 0) + 1;
     const ang = f.aim + (i % 2 ? 0.25 : -0.25);
-    if (f.team === ME || f.visTo[ME]) this.fx.slash(f.x, f.z, ang, s.arc, s.range, f.team === ME ? 0xdff6ff : 0xff8a9a);
+    // En primera persona el tajo se ve en las cuchillas; el arco en el piso taparía la pantalla.
+    const own = f.isPlayer && this.vm.root.visible;
+    if ((f.team === ME || f.visTo[ME]) && !own) this.fx.slash(f.x, f.z, ang, s.arc, s.range, f.team === ME ? 0xdff6ff : 0xff8a9a);
     this.hitObstacle(f.x + Math.sin(f.aim) * 0.9, f.z + Math.cos(f.aim) * 0.9, Math.sin(f.aim), Math.cos(f.aim), s.dmg);
     for (const e of this.fighters) {
       if (e.team === f.team || !e.alive || e.ghost) continue;
@@ -1071,7 +1145,7 @@ export class Match {
       const sd = (p.speed * dt) / steps;
       let dead = false;
       for (let s = 0; s < steps && !dead; s++) {
-        p.x += p.dx * sd; p.z += p.dz * sd; p.left -= sd;
+        p.x += p.dx * sd; p.z += p.dz * sd; p.left -= sd; p.gone += sd;
         if (this.world.shotBlockedAt(p.x, p.z)) {
           this.fx.burst(p.x, 0.8, p.z, { n: 6, color: [p.color, 0xffffff], speed: 3, life: 0.25, size: 0.08, vx: -p.dx * 2, vz: -p.dz * 2 });
           this.hitObstacle(p.x, p.z, p.dx, p.dz, p.dmg);
@@ -1094,12 +1168,14 @@ export class Match {
         this.projectiles.splice(i, 1);
         continue;
       }
-      p.mesh.position.set(p.x, 0.8, p.z);
+      p.mesh.position.set(p.x, 0.8, p.z).add(this.visualOff(p.off, p.gone / 2.5));
+      if (p.off !== NO_OFF) p.mesh.scale.setScalar(NEAR_K + (1 - NEAR_K) * Math.min(1, p.gone / 3));
       if (p.visual === 'ember' || p.visual === 'orb') p.mesh.userData.core.rotation.x += dt * 9;
       p.trail -= dt;
       if (p.trail <= 0) {
         p.trail = p.visual === 'orb' ? 0.02 : 0.045;
-        this.fx.burst(p.x, 0.8, p.z, { n: 1, color: p.color, speed: 0.4, up: 0.3, life: 0.22, size: p.visual === 'orb' ? 0.2 : 0.07, grav: 0 });
+        const mp = p.mesh.position;
+        this.fx.burst(mp.x, mp.y, mp.z, { n: 1, color: p.color, speed: 0.4, up: 0.3, life: 0.22, size: p.visual === 'orb' ? 0.2 : 0.07, grav: 0 });
       }
     }
   }
@@ -1109,7 +1185,8 @@ export class Match {
       const l = this.lobs[i], s = l.spec;
       l.t += dt;
       const u = Math.min(1, l.t / l.dur);
-      l.mesh.position.set(l.fx + (l.tx - l.fx) * u, 0.9 + Math.sin(u * Math.PI) * 3.2 - u * 0.7, l.fz + (l.tz - l.fz) * u);
+      l.mesh.position.set(l.fx + (l.tx - l.fx) * u, 0.9 + Math.sin(u * Math.PI) * 3.2 - u * 0.7, l.fz + (l.tz - l.fz) * u).add(this.visualOff(l.off, u / 0.35));
+      if (l.off !== NO_OFF) l.mesh.scale.setScalar(NEAR_K + (1 - NEAR_K) * Math.min(1, u / 0.4));
       l.mesh.userData.core.rotation.x += dt * 10;
       l.mark.material.uniforms.uAlpha.value = 0.55 + u * 0.6;
       if (u < 1) continue;
@@ -1319,6 +1396,8 @@ export class Match {
     }
 
     this.updateCamera(rawDt);
+    this.vm.update(dt, p, this.camMode === 'primera' && this.blend > 0.6 && p.alive, this.yaw, this.pitch, this.time);
+    this.vm.rig.fxU.uFlash.value = p.punch * 0.5;
 
     // etiquetas: en las vistas con cámara propia se achican con la distancia y la propia no va
     const v = this.tmp, top = this.camMode === 'arriba', cam = this.camera.position;
@@ -1495,6 +1574,7 @@ export class Match {
     this.fx.dispose();
     this.debris.dispose();
     this.world.dispose();
+    this.vm.dispose();
     for (const o of this.own) o.dispose?.();
     this.sun.shadow.map?.dispose();
   }

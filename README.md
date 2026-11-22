@@ -25,11 +25,11 @@ Arena 3 contra 3 con vista cenital, en 3D real (three.js), que corre en el naveg
 
 - **Arriba:** la vista cenital de siempre.
 - **Al hombro:** cámara detrás del personaje, sobre el hombro derecho.
-- **Primera persona:** la cámara en los ojos del personaje; el cuerpo propio no se dibuja.
+- **Primera persona:** la cámara en los ojos del personaje. El cuerpo propio no se dibuja, pero se ven sus brazos o su arma: el taladro de Tuerca, los puños de Brasa, la ballesta de Nox, el frasco de Pompa, las cuchillas de Zip y el hacha de Tajo. Se balancean al caminar, se quedan un poco atrás al girar, bajan cuando no hay munición y cada ataque y cada súper tiene su movimiento. Los disparos salen del arma que se ve.
 
 Al hombro y en primera persona la arena cambia para que lo que frena los disparos también tape la vista: los muros suben uno o dos bloques de piedra, los cajones se apilan de a dos y el pasto crece; en la vista de arriba todo vuelve a quedar bajo, para no tapar a los personajes. El cambio es animado. Arriba hay cielo con sol y nubes, y alrededor islas a lo lejos; el horizonte se funde con la niebla. Los nombres de los rivales que quedan detrás de un muro no se muestran.
 
-Al hombro y en primera persona el mouse queda capturado para mirar (Esc lo suelta y pausa), hay una mira en el centro con la munición debajo, y moverse es relativo a hacia dónde mirás. La puntería sigue siendo sobre el piso, como en la vista de arriba: mirar arriba o abajo solo cambia a qué distancia caen los ataques en arco. Al morir la cámara pasa a la vista de arriba hasta que reaparecés. En celular se mira arrastrando en la mitad de la pantalla que no tiene la palanca, y tocar el botón de ataque dispara al rival que tengas adelante.
+Al hombro y en primera persona el mouse queda capturado para mirar (Esc lo suelta y pausa), hay una mira en el centro con la munición debajo, y moverse es relativo a hacia dónde mirás. La puntería sigue siendo sobre el piso, como en la vista de arriba: mirar arriba o abajo solo cambia a qué distancia caen los ataques en arco. Esos ataques (el frasco de Pompa y el salto de Brasa) muestran un arco punteado con la curva que van a hacer; la parte que queda detrás de un muro se ve más tenue. Al morir la cámara pasa a la vista de arriba hasta que reaparecés. En celular se mira arrastrando en la mitad de la pantalla que no tiene la palanca, y tocar el botón de ataque dispara al rival que tengas adelante.
 
 **Controles**
 
@@ -116,6 +116,7 @@ src/physics.js    escombros con física (gravedad, rebotes, agua)
 src/shaders.js    shaders propios (agua, mar, pasto, personajes, escudo, zonas)
 src/gfx.js        niveles de calidad y posprocesado
 src/models.js     personajes 3D armados desde sus hojas de arte
+src/viewmodel.js  brazos y armas que se ven en primera persona
 src/perfiles/     silueta medida de cada personaje (la genera arte/perfilar_hojas.py)
 src/assets.js     carga de las texturas de public/arte
 src/fx.js         partículas, proyectiles, textos flotantes

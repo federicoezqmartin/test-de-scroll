@@ -16,6 +16,7 @@ Juego de navegador: arena 3 contra 3 en 3D con three.js y Vite, sin framework. U
 - `src/match.js`: la partida: combate, núcleos, reglas, cámara de las tres vistas, efectos de golpes y muertes.
 - `src/ai.js`: bots. `src/world.js`: arena (colisiones en grilla 2D y escenario). `src/physics.js`: escombros.
 - `src/models.js`: personajes 3D. Cinco se arman desde su hoja de arte (`src/perfiles/*.json`, `src/tajo-perfil.json`); Zip es de formas simples.
+- `src/viewmodel.js`: brazos y armas de la primera persona. Usa piezas de un segundo cuerpo del personaje (los brazos, o los accesorios de `r.acc`) colgadas de la cámara en un grupo achicado.
 - `src/shaders.js` y `src/gfx.js`: shaders propios, posprocesado y niveles de calidad.
 - `src/settings.js`: configuración (valores por defecto y la lista de controles de la pantalla). `src/ui.js`: interfaz en DOM. `src/input.js`: teclado, mouse (con captura en las vistas con cámara propia) y táctil.
 - `arte/`: scripts de Python que generan `public/arte/` y los perfiles desde `arte/originales/`.
@@ -36,4 +37,4 @@ Juego de navegador: arena 3 contra 3 en 3D con three.js y Vite, sin framework. U
 ## Estado
 
 - El trabajo está en la rama `claude/busy-gauss-lwcnlr` (pull request #1). Netlify publica una vista previa de cada cambio del pull request.
-- Modo en primera persona, en cinco etapas: 1 (cámara y controles) y 2 (arena alta, cielo, horizonte) están hechas. Siguen: 3, armas vistas en primera persona y marca de los ataques en arco; 4, minimapa que gira y ayuda de puntería en táctil; 5, ajuste fino.
+- Modo en primera persona, en cinco etapas: 1 (cámara y controles), 2 (arena alta, cielo, horizonte) y 3 (armas vistas en primera persona y arco punteado de los ataques por el aire) están hechas. Siguen: 4, minimapa que gira y ayuda de puntería en táctil; 5, ajuste fino.

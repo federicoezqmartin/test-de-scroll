@@ -258,12 +258,27 @@ function nox() {
     const tuft = part(new THREE.ConeGeometry(0.11, 0.34, 5), navy, r.head, sd * 0.25, r.headTop + 0.12, -0.02);
     tuft.rotation.z = -sd * 0.42;
   }
+  // Ballesta: culata, arco curvo hacia adelante con su cuerda tensa y el dardo cargado. Se ve
+  // de cerca en primera persona, por eso tiene más detalle que el resto de los accesorios.
   const bow = new THREE.Group();
   bow.position.set(-0.06, 0.5 - d.piv.hip, 0.42);
   r.torso.add(bow);
-  part(new THREE.BoxGeometry(0.07, 0.07, 0.62), wood, bow, 0, 0, 0.1);
-  part(new THREE.BoxGeometry(0.66, 0.05, 0.06), wood, bow, 0, 0.02, 0.34);
-  part(new THREE.BoxGeometry(0.025, 0.025, 0.3), teal, bow, 0, 0.055, 0.2);
+  const metal = std(0x3a3f4c, { metalness: 0.65, roughness: 0.38 }), cord = std(0xe8e2cf, { roughness: 0.9 });
+  part(new RoundedBoxGeometry(0.075, 0.075, 0.64, 2, 0.02), wood, bow, 0, 0, 0.09);
+  part(new RoundedBoxGeometry(0.055, 0.15, 0.085, 2, 0.02), wood, bow, 0, -0.09, -0.1).rotation.x = 0.4;
+  part(new THREE.BoxGeometry(0.095, 0.06, 0.07), metal, bow, 0, 0.005, 0.4);
+  part(new THREE.BoxGeometry(0.02, 0.05, 0.03), metal, bow, 0, -0.055, 0.0);
+  const arc = 1.9, rad = 0.36;
+  part(new THREE.TorusGeometry(rad, 0.02, 6, 24, arc).rotateZ(PI / 2 - arc / 2).rotateX(PI / 2), wood, bow, 0, 0.02, 0.41 - rad);
+  const tipX = Math.sin(arc / 2) * rad, tipZ = 0.41 - rad + Math.cos(arc / 2) * rad;
+  for (const sd of [1, -1]) {
+    part(new THREE.SphereGeometry(0.026, 8, 6), metal, bow, sd * tipX, 0.02, tipZ);
+    const a = new THREE.Vector3(sd * tipX, 0.02, tipZ), b = new THREE.Vector3(0, 0.045, 0.06);
+    const str = part(new THREE.CylinderGeometry(0.005, 0.005, a.distanceTo(b), 4), cord, bow, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+    str.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.sub(a).normalize());
+  }
+  part(new THREE.CylinderGeometry(0.011, 0.011, 0.36, 6).rotateX(PI / 2), teal, bow, 0, 0.05, 0.24);
+  part(new THREE.ConeGeometry(0.022, 0.06, 6).rotateX(PI / 2), teal, bow, 0, 0.05, 0.45);
   r.armSwing = 0;
   r.kickArm = 0;
   r.custom = (s) => {
@@ -271,6 +286,7 @@ function nox() {
     r.head.rotation.z = Math.sin(s.t * 0.7 + r.seed) * 0.08 * (1 - s.move);
     r.torso.rotation.z = Math.sin(s.phase) * 0.07 * s.move; // camina balanceándose
   };
+  r.acc = { bow }; // accesorios que usa la vista en primera persona
   return r;
 }
 
@@ -293,6 +309,7 @@ function pompa() {
     r.hips.position.y += Math.abs(Math.sin(s.phase)) * 0.1 * s.move; // avanza a saltitos
     r.head.rotation.z = Math.sin(s.phase) * 0.05 * s.move;
   };
+  r.acc = { flask }; // accesorios que usa la vista en primera persona
   return r;
 }
 
@@ -378,6 +395,7 @@ function tajo() {
     lamp.emissiveIntensity = 1.1 + Math.sin(s.t * 4 + r.seed) * 0.2;
     r.torso.rotation.x += s.move * 0.05;
   };
+  r.acc = { axe, lantern }; // accesorios que usa la vista en primera persona
   return r;
 }
 
