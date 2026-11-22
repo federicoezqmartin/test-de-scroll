@@ -31,6 +31,14 @@ Al hombro y en primera persona la arena cambia para que lo que frena los disparo
 
 Al hombro y en primera persona el mouse queda capturado para mirar (Esc lo suelta y pausa), hay una mira en el centro con la munición debajo, y moverse es relativo a hacia dónde mirás. La puntería sigue siendo sobre el piso, como en la vista de arriba: mirar arriba o abajo solo cambia a qué distancia caen los ataques en arco. Esos ataques (el frasco de Pompa y el salto de Brasa) muestran un arco punteado con la curva que van a hacer; la parte que queda detrás de un muro se ve más tenue. Al morir la cámara pasa a la vista de arriba hasta que reaparecés. En celular se mira arrastrando en la mitad de la pantalla que no tiene la palanca, y tocar el botón de ataque dispara al rival que tengas adelante.
 
+**Ayuda de puntería en celular** (al hombro y en primera persona; con mouse no cambia nada). Trabaja solo sobre el giro, porque la puntería es sobre el piso:
+
+- **Fricción:** con la mira sobre un rival, el giro con el dedo se frena (queda el 60 % en Suave y el 40 % en Fuerte). En el borde del rival se suelta de a poco.
+- **Imán:** mientras te movés o atacás, si hay un rival cerca del centro la cámara se corre de a poco hacia él. Tira más cuanto más centrado está, así no arranca de golpe.
+- **Marca:** un aro sobre el rival al que iría el disparo si tocás el botón sin arrastrar, y su nombre se pinta de amarillo.
+
+Nunca ayuda hacia un rival escondido en el pasto o detrás de un muro o un cajón; el toque sin arrastrar tampoco les apunta en estas vistas. La intensidad se elige en Configuración → Controles táctiles.
+
 **Controles**
 
 - Teclado y mouse: `WASD` o flechas para moverte, mouse para apuntar (o para mirar, al hombro y en primera persona), clic para disparar, `Espacio` o clic derecho para el súper (mantené para ver a dónde va), `V` para cambiar de vista, `Esc` para pausar.
@@ -41,7 +49,7 @@ Al hombro y en primera persona el mouse queda capturado para mirar (Esc lo suelt
 - **Marcador:** diez casilleros por equipo que se van llenando, la meta y el reloj de la partida.
 - **Tarjeta del jugador:** retrato, vida en números, munición y núcleos que llevás.
 - **Paneles de equipo:** aliados y rivales con retrato, vida, núcleos y la cuenta para reaparecer. De un rival escondido se muestra lo último que se le vio.
-- **Minimapa:** mapa, núcleos en el piso, aliados y los rivales que estén a la vista. Se actualiza cuando se rompe un cajón o se corta pasto.
+- **Minimapa:** mapa, núcleos en el piso, aliados y los rivales que estén a la vista. Se actualiza cuando se rompe un cajón o se corta pasto. En la vista de arriba es el mapa entero con el norte arriba. Al hombro y en primera persona es redondo, con algo de aumento, centrado en vos y girado con la cámara: lo que tenés adelante queda arriba. Ahí sos una flecha fija con un cono del ancho del campo de visión, la N del borde marca el norte (el lado de la base rival) y lo que queda fuera del círculo aparece más chico pegado al borde.
 - **Avisos:** bajas con retratos, rachas ("¡Doble baja!"), un arco rojo que marca de dónde vino el golpe, quién te eliminó y la mira del mouse.
 - **Pausa:** tabla en vivo con bajas, daño y núcleos de los seis.
 
@@ -58,7 +66,7 @@ Se abre desde el menú, la pausa o el engranaje del HUD, y se guarda en el naveg
 | Gráficos | Calidad (Auto, Baja, Media, Alta) · resplandor · desenfoque de maqueta · color de cine · sangre · cuadros por segundo |
 | Sonido | Volumen · silenciar |
 | Interfaz | Tamaño · minimapa · paneles de equipo · nombres · números de daño · aviso de dónde viene el daño · colores de equipo (azul y rojo, o azul y naranja para daltonismo) |
-| Controles táctiles | Modo zurdo · tamaño de los botones |
+| Controles táctiles | Modo zurdo · tamaño de los botones · ayuda de puntería (Apagada, Suave, Fuerte) |
 
 La dificultad, el nombre y el color de equipo en el 3D se aplican al empezar la próxima partida; el resto cambia al instante.
 
@@ -99,6 +107,8 @@ npm run build      # genera dist/
 npm run preview    # sirve dist/
 npm test           # juega una partida completa por personaje, sin ventana
 npm run qa         # capturas del menú y de las tres vistas en qa/out/
+node qa/punteria.mjs   # mide la ayuda de puntería en táctil (fricción, imán, escondidos)
+node qa/minimapa.mjs   # capturas del minimapa redondo girado y de la marca, en qa/out/
 ```
 
 Las pruebas necesitan `npx playwright install chromium` la primera vez. Para instalarlo en tu compu y trabajar con Claude Code ahí, ver `INSTALAR.md`.

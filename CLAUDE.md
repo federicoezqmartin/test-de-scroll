@@ -8,7 +8,9 @@ Juego de navegador: arena 3 contra 3 en 3D con three.js y Vite, sin framework. U
 - `npm run build`: compila a `dist/`. Tiene que pasar antes de dar algo por terminado.
 - `npm test`: juega una partida completa por personaje, sin ventana (`qa/partida.mjs`). Opciones: `npm test -- --heroe tajo --vista primera --segundos 300`. Sale con código 1 si una partida no termina o hay errores en la consola.
 - `npm run qa`: capturas del menú y de las tres vistas en `qa/out/` (`qa/capturas.mjs`). Mirarlas es la forma de verificar cambios visuales.
-- Las pruebas necesitan `npx playwright install chromium` la primera vez. Renderizan por software: son lentas y no miden rendimiento.
+- `node qa/punteria.mjs [--vista hombro]`: mide la ayuda de puntería en táctil y sale con código 1 si la fricción, el imán o el filtro de escondidos no dan lo esperado.
+- `node qa/minimapa.mjs`: capturas del minimapa redondo girado hacia cuatro lados y de la marca de puntería, en escritorio y celular.
+- Las pruebas necesitan `npx playwright install chromium` la primera vez. Renderizan por software: son lentas y no miden rendimiento. Correlas de a una: varias a la vez chocan en la caché de Vite (`EPERM` en `node_modules/.vite`).
 
 ## Dónde está cada cosa
 
@@ -37,4 +39,4 @@ Juego de navegador: arena 3 contra 3 en 3D con three.js y Vite, sin framework. U
 ## Estado
 
 - El trabajo está en la rama `claude/busy-gauss-lwcnlr` (pull request #1). Netlify publica una vista previa de cada cambio del pull request.
-- Modo en primera persona, en cinco etapas: 1 (cámara y controles), 2 (arena alta, cielo, horizonte) y 3 (armas vistas en primera persona y arco punteado de los ataques por el aire) están hechas. Siguen: 4, minimapa que gira y ayuda de puntería en táctil; 5, ajuste fino.
+- Modo en primera persona, en cinco etapas: 1 (cámara y controles), 2 (arena alta, cielo, horizonte), 3 (armas vistas en primera persona y arco punteado de los ataques por el aire) y 4 (minimapa redondo que gira con la cámara y ayuda de puntería en táctil: fricción, imán y marca, con opción en Controles táctiles) están hechas. Sigue la 5, ajuste fino: entre otras cosas, el brillo de cerca de las súper de Tuerca y Pompa, y los puños de Brasa, que se ven oscuros cuando está quieta.

@@ -349,6 +349,7 @@ body.no-teams #feed { top: calc(58px + var(--safe-t)); }
   border-radius: 10px;
   display: block;
 }
+#minimap.round { border-radius: 50%; }
 body.no-minimap #minimap { display: none; }
 
 /* Súper */
@@ -420,6 +421,34 @@ body.touch #super-meter { display: none; }
 @keyframes hitdir { 0% { opacity: 1; } 60% { opacity: 0.85; } 100% { opacity: 0; } }
 
 /* Mira fija en el centro, en las vistas al hombro y en primera persona */
+/* Ayuda de puntería en táctil: aro sobre el rival al que iría el disparo automático. */
+#aimmark { position: absolute; left: 0; top: 0; width: 0; height: 0; display: none; --d: 60px; }
+#aimmark i {
+  position: absolute;
+  left: calc(var(--d) / -2);
+  top: calc(var(--d) / -2);
+  width: var(--d);
+  height: var(--d);
+  border-radius: 50%;
+  border: 2px solid #ffe98c;
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.85));
+  animation: aimmark 0.8s ease-in-out infinite alternate;
+}
+#aimmark i::before {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  background:
+    linear-gradient(#ffe98c, #ffe98c) 50% 0 / 2px 8px no-repeat,
+    linear-gradient(#ffe98c, #ffe98c) 50% 100% / 2px 8px no-repeat,
+    linear-gradient(#ffe98c, #ffe98c) 0 50% / 8px 2px no-repeat,
+    linear-gradient(#ffe98c, #ffe98c) 100% 50% / 8px 2px no-repeat;
+}
+@keyframes aimmark { to { transform: scale(0.9); } }
+@media (prefers-reduced-motion: reduce) { #aimmark i { animation: none; } }
+#world-ui .tag.target .tag-name { color: #ffe98c; }
+#world-ui .tag.target .tag-hp { border-color: #ffe98c; }
+
 #crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; display: none; }
 body[data-screen='match'][data-view='hombro'] #crosshair, body[data-screen='match'][data-view='primera'] #crosshair { display: block; }
 #crosshair .ch {

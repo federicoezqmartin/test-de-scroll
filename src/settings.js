@@ -35,6 +35,7 @@ export const DEFAULTS = {
   // táctil
   lefty: false,
   btnScale: 1,
+  aimAssist: 'suave',
 };
 
 // type: seg (opciones), toggle, range (min, max, step, fmt) o text.
@@ -92,6 +93,7 @@ export const SECTIONS = [
     items: [
       { k: 'lefty', type: 'toggle', label: 'Modo zurdo', note: 'Botones de ataque a la izquierda y palanca a la derecha.' },
       { k: 'btnScale', type: 'range', label: 'Tamaño de los botones', min: 0.8, max: 1.4, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' },
+      { k: 'aimAssist', type: 'seg', label: 'Ayuda de puntería', opts: [['no', 'Apagada'], ['suave', 'Suave'], ['fuerte', 'Fuerte']], note: 'Al hombro y en primera persona: el giro se frena sobre un rival y la mira se corre de a poco hacia el que tenés cerca del centro. Nunca hacia uno escondido.' },
     ],
   },
 ];

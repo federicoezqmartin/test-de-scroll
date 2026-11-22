@@ -48,6 +48,13 @@ const TOP_FOV = 36;
 const PITCH0 = { hombro: -0.22, primera: -0.14 };
 const PITCH_LIM = { hombro: [-1.05, 0.32], primera: [-1.35, 1.15] };
 const LOOK_K = 0.0023; // radianes por píxel de mouse, con sensibilidad 1
+// Ayuda de puntería en táctil, al hombro y en primera persona. Trabaja solo sobre el yaw porque
+// la puntería es sobre el piso. slow: parte del giro del dedo que queda con la mira sobre un
+// rival. pull: qué tan rápido se corre la cámara hacia el rival cercano al centro (por segundo).
+// cone: hasta qué ángulo de la mira lo busca el imán.
+const ASSIST = { suave: { slow: 0.6, pull: 2.4, cone: 0.28 }, fuerte: { slow: 0.4, pull: 5, cone: 0.38 } };
+const ASSIST_REACH = 9; // metros mínimos de alcance de la ayuda (los de cuerpo a cuerpo también la tienen al acercarse)
+const AUTO_CONE = 1.2; // tocar sin arrastrar busca rival dentro de este ángulo alrededor de la mira
 const CENTER = new THREE.Vector2(0, 0);
 const HAZE = 0x9ccbe0; // color del horizonte: cielo bajo, niebla y mar lejano se funden en él
 
@@ -78,6 +85,9 @@ export class Match {
     this.coreT = RULES.coreFirst;
     this.vw = 1;
     this.vh = 1;
+    this.markTgt = null; // rival al que iría el disparo automático (se marca en pantalla, solo en táctil)
+    this.markShown = null;
+    this.atkT = -99; // último ataque del jugador en táctil: el imán sigue un rato después de tocar
 
     const scene = (this.scene = new THREE.Scene());
     scene.background = new THREE.Color(HAZE);
@@ -199,6 +209,7 @@ export class Match {
     this.sens = s.sens ?? 1;
     this.fovUser = s.fov ?? 90;
     this.invertY = !!s.invertY;
+    this.assist = ASSIST[s.aimAssist] || null;
     // Al pasar a una vista con cámara propia, se arranca mirando hacia donde mira el personaje.
     if (this.player && prev && prev !== this.view && this.view !== 'arriba') {
       this.yaw = this.player.face;
@@ -308,7 +319,7 @@ export class Match {
     shaderTime.value = this.time;
     this.input.update();
     if (this.state === 'intro') this.updateIntro(dt);
-    this.controlPlayer();
+    this.controlPlayer(rawDt);
     for (const f of this.fighters) {
       if (!f.bot) continue;
       if (this.state === 'play') f.bot.update(dt);
@@ -364,22 +375,31 @@ export class Match {
     return this.tmp.set(p.x + fx * 40, 0, p.z + fz * 40);
   }
 
-  controlPlayer() {
+  controlPlayer(dt = 1 / 60) {
     const p = this.player, inp = this.input;
     const events = inp.take();
     const look = inp.takeLook();
     const fp = this.firstPerson;
+    // La ayuda de puntería es solo para el dedo: con mouse no cambia nada.
+    const touchCam = fp && p.alive && inp.touch;
+    const help = touchCam ? this.assist : null;
     if (fp && p.alive) {
       const k = LOOK_K * this.sens;
-      this.yaw -= look.x * k;
+      this.yaw -= look.x * k * (help && look.x ? this.aimFriction(p, help) : 1);
       this.pitch -= look.y * k * (this.invertY ? -1 : 1);
       const [lo, hi] = PITCH_LIM[this.view];
       this.pitch = clamp(this.pitch, lo, hi);
     }
+    this.markTgt = touchCam && this.state === 'play' ? this.autoTarget(p, p.def.attack, this.yaw, AUTO_CONE) : null;
     if (this.state !== 'play') {
       p.mvx = p.mvz = 0;
       this.setIndicator(null);
       return;
+    }
+    if (help) {
+      if (events.length || inp.t.attack || inp.t.super) this.atkT = this.time;
+      const moving = Math.hypot(inp.move.x, inp.move.z) > 0.2;
+      if (moving || this.time - this.atkT < 0.6) this.aimMagnet(p, help, dt);
     }
     const w = this.toWorld(inp.move.x, inp.move.z, { x: 0, z: 0 });
     p.mvx = w.x;
@@ -397,7 +417,7 @@ export class Match {
         const sup = ev.kind === 'super';
         const spec = sup ? p.def.super : p.def.attack;
         // Tocar sin arrastrar apunta solo; en las vistas con cámara propia, solo a lo que tenés adelante.
-        const a = ev.auto ? this.autoAim(p, spec, fp ? this.yaw : null, 1.2) : { ...this.toWorld(ev.x, ev.z, v), dist: ev.mag * spec.range };
+        const a = ev.auto ? this.autoAim(p, spec, fp ? this.yaw : null, AUTO_CONE) : { ...this.toWorld(ev.x, ev.z, v), dist: ev.mag * spec.range };
         if (sup) this.trySuper(p, a.x, a.z, a.dist);
         else this.tryAttack(p, a.x, a.z, a.dist);
       }
@@ -418,21 +438,72 @@ export class Match {
     }
   }
 
-  // yaw y cone: si se pasan, solo cuentan los rivales dentro de ese ángulo alrededor de yaw.
-  autoAim(f, spec, yaw = null, cone = Math.PI) {
+  // Rival más cercano al que puede ir el disparo automático. yaw y cone: si se pasan (vistas con
+  // cámara propia), solo cuentan los que están dentro de ese ángulo y sin muro en el medio,
+  // porque detrás de los muros altos no se los ve.
+  autoTarget(f, spec, yaw = null, cone = Math.PI) {
     let best = null, bd = spec.range * 1.25 + (spec.aoe || spec.radius || 0);
     for (const e of this.fighters) {
       if (e.team === f.team || !e.alive || !e.visTo[f.team]) continue;
       if (yaw !== null && Math.abs(angDiff(Math.atan2(e.x - f.x, e.z - f.z), yaw)) > cone) continue;
       const d = Math.hypot(e.x - f.x, e.z - f.z);
-      if (d < bd) { bd = d; best = e; }
+      if (d >= bd) continue;
+      if (yaw !== null && !this.world.shotClear(f.x, f.z, e.x, e.z)) continue;
+      bd = d;
+      best = e;
     }
+    return best;
+  }
+
+  autoAim(f, spec, yaw = null, cone = Math.PI) {
+    const best = this.autoTarget(f, spec, yaw, cone);
     const a0 = yaw ?? f.face;
     if (!best) return { x: Math.sin(a0), z: Math.cos(a0), dist: spec.range * 0.75 };
+    const bd = Math.hypot(best.x - f.x, best.z - f.z);
     const tt = spec.kind === 'lob' ? spec.flight : spec.speed ? bd / spec.speed : 0;
     const dx = best.x + best.velx * tt * 0.8 - f.x, dz = best.z + best.velz * tt * 0.8 - f.z;
     const l = Math.hypot(dx, dz) || 1;
     return { x: dx / l, z: dz / l, dist: l };
+  }
+
+  // Rivales hacia los que puede ir la ayuda de puntería, con su distancia y su ángulo respecto de
+  // la mira. Nunca uno escondido en el pasto ni uno detrás de un muro o un cajón.
+  assistTargets(f) {
+    const out = [], reach = Math.max(ASSIST_REACH, f.def.attack.range * 1.25);
+    for (const e of this.fighters) {
+      if (e.team === f.team || !e.alive || !e.visTo[f.team]) continue;
+      const d = Math.hypot(e.x - f.x, e.z - f.z);
+      if (d > reach || d < 0.3) continue;
+      const off = angDiff(Math.atan2(e.x - f.x, e.z - f.z), this.yaw);
+      if (Math.abs(off) > 0.6) continue; // lejos de la mira: no hace falta mirar si hay muro
+      if (!this.world.shotClear(f.x, f.z, e.x, e.z)) continue;
+      out.push({ e, d, off });
+    }
+    return out;
+  }
+
+  // Fricción: cuánto queda del giro del dedo. 1 sin rival bajo la mira; help.slow con la mira
+  // encima de uno. En el borde del rival se suelta de a poco, para que no se sienta un escalón.
+  aimFriction(f, help) {
+    let k = 1;
+    for (const { d, off } of this.assistTargets(f)) {
+      const half = Math.atan2(R + 0.3, d); // medio ancho del rival visto desde el jugador
+      const a = Math.abs(off);
+      if (a >= half * 2) continue;
+      const w = a <= half ? 1 : 2 - a / half;
+      k = Math.min(k, 1 - (1 - help.slow) * w);
+    }
+    return k;
+  }
+
+  // Imán: corre la cámara de a poco hacia el rival más cerca del centro de la mira. Tira más
+  // cuanto más centrado está, así no arranca de golpe cuando un rival entra al cono.
+  aimMagnet(f, help, dt) {
+    let best = null;
+    for (const t of this.assistTargets(f)) if (Math.abs(t.off) < help.cone && (!best || Math.abs(t.off) < Math.abs(best.off))) best = t;
+    if (!best) return;
+    const w = 1 - Math.abs(best.off) / help.cone;
+    this.yaw += best.off * (1 - Math.exp(-help.pull * w * dt));
   }
 
   buildIndicator() {
@@ -1416,6 +1487,20 @@ export class Match {
       f.tag.place((v.x * 0.5 + 0.5) * this.vw, (-v.y * 0.5 + 0.5) * this.vh, v.z < 1, k);
       f.tag.sync(f);
     }
+    // Aro sobre el rival al que iría el disparo automático, del tamaño del cuerpo a esa distancia.
+    const t = top ? null : this.markTgt;
+    if (t !== this.markShown) {
+      this.markShown?.tag.target(false);
+      t?.tag.target(true);
+      this.markShown = t;
+    }
+    if (t) {
+      v.set(t.x, t.rig.height * 0.5 + t.airY, t.z).project(this.camera);
+      const dist = Math.max(0.5, Math.hypot(t.x - cam.x, t.z - cam.z));
+      const focal = this.vh / 2 / Math.tan((this.camera.fov * DEG) / 2);
+      const size = clamp((1.7 * focal) / dist, 34, 150);
+      this.hud.aimMark((v.x * 0.5 + 0.5) * this.vw, (-v.y * 0.5 + 0.5) * this.vh, size, v.z < 1);
+    } else this.hud.aimMark(0, 0, 0, false);
     if (top) {
       v.set(p.x, 0.9, p.z).project(this.camera);
       this.hud.anchor((v.x * 0.5 + 0.5) * this.vw, (-v.y * 0.5 + 0.5) * this.vh);
