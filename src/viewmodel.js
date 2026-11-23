@@ -55,6 +55,8 @@ export class ViewModel {
     this.rig.root.traverse(collect);
     this.build();
     this.root.traverse(collect);
+    // Luz mínima propia (ver heroUniforms): la piedra de Brasa es oscura y necesita más.
+    this.rig.fxU.uLift.value = heroId === 'brasa' ? 0.45 : 0.2;
     // Sin sombras: el arma está, de verdad, a centímetros del ojo, y las sombras del escenario
     // la dejarían a oscuras cada vez que pasás junto a un muro.
     this.root.traverse((o) => {
@@ -119,10 +121,11 @@ export class ViewModel {
       }
       case 'brasa': {
         // Los dos puños de piedra abajo, a los costados. Van casi parados para que se vea su
-        // cara de adelante, la de las grietas de lava.
+        // cara de adelante, la de las grietas de lava, y bastante altos: más abajo solo
+        // asomaba la punta de roca oscura y la lava quedaba fuera de cuadro.
         const L = -this.armTip(r.armR);
-        this.main = this.slot(r.armR, [0.46, -0.3, -1.15], [-0.25, 1, -0.75], L * 0.9, { scale: 0.75, roll: 0.4 });
-        this.off = this.slot(r.armL, [-0.46, -0.3, -1.15], [0.25, 1, -0.75], L * 0.9, { scale: 0.75, roll: -0.4 });
+        this.main = this.slot(r.armR, [0.46, -0.2, -1.15], [-0.25, 1, -0.75], L * 0.9, { scale: 0.75, roll: 0.4 });
+        this.off = this.slot(r.armL, [-0.46, -0.2, -1.15], [0.25, 1, -0.75], L * 0.9, { scale: 0.75, roll: -0.4 });
         this.muzzle(r.armR, 0, -L * 0.85, 0);
         this.muzzle(r.armL, 0, -L * 0.85, 0);
         break;
@@ -274,8 +277,10 @@ export class ViewModel {
         const kk = kick * (sup ? 1.8 : 1);
         this.main.position.z += kk * 0.08;
         this.main.rotation.x = kk * 0.1;
-        this.flash.material.opacity = kick > 0.55 ? (kick - 0.55) * 2.2 : 0;
-        this.flash.scale.setScalar((sup ? 0.3 : 0.12) + kick * 0.12);
+        // El destello de la súper es apenas más grande que el del remache: pegado al ojo y con
+        // el resplandor, uno grande tapaba la esfera que sale.
+        this.flash.material.opacity = kick > 0.55 ? (kick - 0.55) * (sup ? 1.4 : 2.2) : 0;
+        this.flash.scale.setScalar(sup ? 0.15 + kick * 0.1 : 0.12 + kick * 0.12);
         break;
       }
       case 'brasa': {
@@ -297,7 +302,8 @@ export class ViewModel {
             s.position.z -= punch * 0.3;
             s.position.y += punch * 0.1;
           }
-          if (lava) lava.w = 2 + Math.sin(time * 3) * 0.4 + punch * 1.8;
+          // En reposo la lava late bien encendida: es lo que hace que los puños se lean.
+          if (lava) lava.w = 2.8 + Math.sin(time * 3) * 0.4 + punch * 1.4;
         }
         break;
       }

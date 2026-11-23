@@ -176,8 +176,10 @@ export function grassMaterial() {
 }
 
 // --- Personajes: borde de luz del color del equipo + destello al recibir daño --
+// uLift: luz mínima propia. Solo la usa el arma de la primera persona, para que se lea igual
+// mire uno hacia donde mire: con el sol de espaldas quedaba en sombra contra un fondo claro.
 export function heroUniforms(rim = 0x000000) {
-  return { uFlash: { value: 0 }, uRim: { value: new THREE.Color(rim) } };
+  return { uFlash: { value: 0 }, uRim: { value: new THREE.Color(rim) }, uLift: { value: 0 } };
 }
 export function patchHero(material, u) {
   if (!material.isMeshStandardMaterial) return;
@@ -186,11 +188,12 @@ export function patchHero(material, u) {
     extra?.(s);
     s.uniforms.uFlash = u.uFlash;
     s.uniforms.uRim = u.uRim;
+    s.uniforms.uLift = u.uLift;
     s.fragmentShader = s.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uFlash;\nuniform vec3 uRim;')
+      .replace('#include <common>', '#include <common>\nuniform float uFlash;\nuniform vec3 uRim;\nuniform float uLift;')
       .replace('#include <opaque_fragment>', /* glsl */ `
         float rimF = pow(1.0 - saturate(dot(normalize(vViewPosition), normal)), 2.6);
-        outgoingLight += uRim * rimF;
+        outgoingLight += uRim * rimF + diffuseColor.rgb * uLift;
         outgoingLight = mix(outgoingLight, vec3(1.7), uFlash);
         #include <opaque_fragment>`);
   });

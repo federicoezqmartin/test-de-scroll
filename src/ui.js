@@ -372,6 +372,18 @@ export class UI {
     g.closePath();
     g.fillStyle = cone;
     g.fill();
+    // Norte: la N gira con el mapa pegada al borde. Va antes que los puntos, para que un rival
+    // marcado en el borde quede encima y no tapado.
+    const nr = r - 7 * dpr, nx = r + sin * nr, ny = r - cos * nr;
+    g.beginPath();
+    g.arc(nx, ny, 6.5 * dpr, 0, 6.3);
+    g.fillStyle = 'rgba(8, 12, 20, 0.85)';
+    g.fill();
+    g.fillStyle = '#fff';
+    g.font = `800 ${Math.round(9 * dpr)}px system-ui, sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('N', nx, ny + 0.5 * dpr);
     // Lo que queda fuera del círculo se marca en el borde, más chico, para saber hacia dónde está.
     const dot = (x, z, rad, color, ring) => {
       const dx = (x - p.x) * s, dz = (z - p.z) * s;
@@ -406,22 +418,11 @@ export class UI {
     g.strokeStyle = '#1c1500';
     g.stroke();
     g.restore();
-    // Borde y norte: la N gira con el mapa y siempre queda pegada al borde.
     g.lineWidth = 2 * dpr;
     g.strokeStyle = 'rgba(8, 12, 20, 0.7)';
     g.beginPath();
     g.arc(r, r, r - dpr, 0, 6.3);
     g.stroke();
-    const nr = r - 7 * dpr, nx = r + sin * nr, ny = r - cos * nr;
-    g.beginPath();
-    g.arc(nx, ny, 6.5 * dpr, 0, 6.3);
-    g.fillStyle = 'rgba(8, 12, 20, 0.85)';
-    g.fill();
-    g.fillStyle = '#fff';
-    g.font = `800 ${Math.round(9 * dpr)}px system-ui, sans-serif`;
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText('N', nx, ny + 0.5 * dpr);
   }
 
   // Una vez por cuadro, al final de la vista. Lo caro (paneles, minimapa) va más espaciado.

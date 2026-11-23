@@ -12,7 +12,8 @@ for (const [nombre, tam] of [['escritorio', { ancho: 1440, alto: 900 }], ['celul
   await page.waitForTimeout(1200);
   await page.click(`.hero-btn[data-id=${o.heroe}]`);
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: `qa/out/${nombre}-menu.png` });
+  // El render por software tarda: cada captura puede llevar más de medio minuto.
+  await page.screenshot({ path: `qa/out/${nombre}-menu.png`, timeout: 120000 });
   for (const vista of ['arriba', 'hombro', 'primera']) {
     await page.evaluate(({ heroe, vista }) => {
       const T = window.__trifulca;
@@ -24,7 +25,7 @@ for (const [nombre, tam] of [['escritorio', { ancho: 1440, alto: 900 }], ['celul
       for (let i = 0; i < 30; i++) m.update(1 / 60);
     }, { heroe: o.heroe, vista });
     await page.waitForTimeout(2500);
-    await page.screenshot({ path: `qa/out/${nombre}-${vista}.png` });
+    await page.screenshot({ path: `qa/out/${nombre}-${vista}.png`, timeout: 120000 });
   }
   console.log(`${nombre}: capturas en qa/out/${nombre}-*.png${errores.length ? ` · ${errores.length} errores:\n` + errores.slice(0, 5).join('\n') : ''}`);
   await cerrar();

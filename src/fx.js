@@ -10,6 +10,14 @@ const SCORCH_MAX = 8;
 const STAIN_MAX = 80;
 const tmpColor = new THREE.Color();
 const v3 = new THREE.Vector3();
+// Lo que pasa pegado a la cámara se achica y se apaga entre d0 y d1 metros del ojo. En primera
+// persona las chispas, el humo y los halos nacen a centímetros de la cara y, con el resplandor,
+// tapaban media pantalla. Desde arriba la cámara está a unos 20 m y al hombro a más de 3, así
+// que ahí casi nunca actúa.
+const nearFade = (d, d0, d1) => {
+  const u = Math.min(1, Math.max(0, (d - d0) / (d1 - d0)));
+  return u * u * (3 - 2 * u);
+};
 
 function haloTexture() {
   const c = document.createElement('canvas');
@@ -159,6 +167,7 @@ export class Fx {
     }
 
     this.mats = new Map();
+    this.flying = new Set(); // proyectiles en el aire: su halo se apaga si pasan pegados a la cámara
     this.rings = [];
     this.texts = [];
     this.textPool = [];
@@ -189,10 +198,22 @@ export class Fx {
     const core = new THREE.Mesh(this.geos[visual] || this.geos.ember, this.basic(color));
     g.add(core);
     const size = { orb: 3.2, bigflask: 1.7, flask: 1.2, dart: 1.3, bolt: 1.1, ember: 1.1 }[visual] || 1.1;
-    g.add(this.haloSprite(color, size));
+    const halo = this.haloSprite(color, size);
+    g.add(halo);
     g.userData.core = core;
+    g.userData.halo = halo;
+    this.flying.add(g);
     this.scene.add(g);
     return g;
+  }
+
+  // Disparo propio en primera persona: su núcleo arranca apagado y se enciende al alejarse del
+  // ojo. Pintado con el color reforzado del resplandor, a uno o dos metros de la cámara era una
+  // mancha blanca que tapaba la mira. Lleva su propio material para no apagar los de los demás.
+  ownShot(g) {
+    const core = g.userData.core;
+    core.material = core.material.clone();
+    g.userData.coreColor = core.material.color.clone();
   }
 
   // Núcleo: el ícono del arte como cartel que siempre mira a cámara, con resplandor.
@@ -213,6 +234,8 @@ export class Fx {
   }
 
   remove(obj) {
+    this.flying.delete(obj);
+    if (obj.userData?.coreColor) obj.userData.core.material.dispose();
     this.scene.remove(obj);
     obj.traverse?.((o) => { if (o.isSprite && o.material !== this.coreMat) o.material.dispose(); });
   }
@@ -346,8 +369,9 @@ export class Fx {
         p.y = 0.04; p.vy *= -0.35;
       }
     }
+    const eye = camera.position;
     for (const p of this.p) {
-      const s = p.size * (1 - (p.t / p.life) ** 2);
+      const s = p.size * (1 - (p.t / p.life) ** 2) * nearFade(Math.hypot(p.x - eye.x, p.y - eye.y, p.z - eye.z), 0.35, 1.6);
       d.position.set(p.x, p.y, p.z);
       d.scale.setScalar(s);
       d.rotation.set(p.t * 7, p.t * 5, 0);
@@ -357,6 +381,12 @@ export class Fx {
       n++;
     }
     this.pMesh.count = n;
+    for (const g of this.flying) {
+      const dist = g.position.distanceTo(eye), base = g.userData.coreColor;
+      // Lo propio se sigue de atrás, en el centro de la mira: su halo aparece más tarde.
+      g.userData.halo.material.opacity = 0.85 * (base ? nearFade(dist, 1.2, 5) : nearFade(dist, 0.8, 3));
+      if (base) g.userData.core.material.color.copy(base).multiplyScalar(0.25 + 0.75 * nearFade(dist, 1, 4));
+    }
     this.pMesh.instanceMatrix.needsUpdate = true;
     if (this.pMesh.instanceColor) this.pMesh.instanceColor.needsUpdate = true;
 
@@ -379,7 +409,7 @@ export class Fx {
       pd.updateMatrix();
       this.puffMesh.setMatrixAt(pn, pd.matrix);
       this.puffMesh.setColorAt(pn, tmpColor.set(p.color));
-      this.puffAlpha.array[pn] = p.alpha * (1 - u) * (1 - u) * Math.min(1, u * 9);
+      this.puffAlpha.array[pn] = p.alpha * (1 - u) * (1 - u) * Math.min(1, u * 9) * nearFade(Math.hypot(p.x - eye.x, p.y - eye.y, p.z - eye.z), 0.6, 2.4);
       pn++;
     }
     this.puffMesh.count = pn;

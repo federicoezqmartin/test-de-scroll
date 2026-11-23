@@ -10,6 +10,8 @@ Juego de navegador: arena 3 contra 3 en 3D con three.js y Vite, sin framework. U
 - `npm run qa`: capturas del menú y de las tres vistas en `qa/out/` (`qa/capturas.mjs`). Mirarlas es la forma de verificar cambios visuales.
 - `node qa/punteria.mjs [--vista hombro]`: mide la ayuda de puntería en táctil y sale con código 1 si la fricción, el imán o el filtro de escondidos no dan lo esperado.
 - `node qa/minimapa.mjs`: capturas del minimapa redondo girado hacia cuatro lados y de la marca de puntería, en escritorio y celular.
+- `node qa/armas.mjs [--heroe brasa,pompa] [--calidad alta] [--celular]`: capturas en primera persona de cada arma quieta, caminando, atacando y en tres momentos de la súper, con la partida congelada en cada instante. Cada captura tarda más de medio minuto.
+- No edites archivos de `src/` mientras corre una prueba: Vite recarga la página y la prueba se corta.
 - Las pruebas necesitan `npx playwright install chromium` la primera vez. Renderizan por software: son lentas y no miden rendimiento. Correlas de a una: varias a la vez chocan en la caché de Vite (`EPERM` en `node_modules/.vite`).
 
 ## Dónde está cada cosa
@@ -18,7 +20,8 @@ Juego de navegador: arena 3 contra 3 en 3D con three.js y Vite, sin framework. U
 - `src/match.js`: la partida: combate, núcleos, reglas, cámara de las tres vistas, efectos de golpes y muertes.
 - `src/ai.js`: bots. `src/world.js`: arena (colisiones en grilla 2D y escenario). `src/physics.js`: escombros.
 - `src/models.js`: personajes 3D. Cinco se arman desde su hoja de arte (`src/perfiles/*.json`, `src/tajo-perfil.json`); Zip es de formas simples.
-- `src/viewmodel.js`: brazos y armas de la primera persona. Usa piezas de un segundo cuerpo del personaje (los brazos, o los accesorios de `r.acc`) colgadas de la cámara en un grupo achicado.
+- `src/viewmodel.js`: brazos y armas de la primera persona. Usa piezas de un segundo cuerpo del personaje (los brazos, o los accesorios de `r.acc`) colgadas de la cámara en un grupo achicado. Ese cuerpo tiene una luz mínima propia (`uLift` de `heroUniforms`, en `src/shaders.js`).
+- Lo que pasa cerca del ojo: `nearFade` en `src/fx.js` achica partículas, humo y halos; `NEAR_K`, `NEAR_BIG`, `OWN_HALO` y `fx.ownShot` en `src/match.js` hacen nacer chico y apagado lo que dispara uno en primera persona.
 - `src/shaders.js` y `src/gfx.js`: shaders propios, posprocesado y niveles de calidad.
 - `src/settings.js`: configuración (valores por defecto y la lista de controles de la pantalla). `src/ui.js`: interfaz en DOM. `src/input.js`: teclado, mouse (con captura en las vistas con cámara propia) y táctil.
 - `arte/`: scripts de Python que generan `public/arte/` y los perfiles desde `arte/originales/`.
@@ -39,4 +42,5 @@ Juego de navegador: arena 3 contra 3 en 3D con three.js y Vite, sin framework. U
 ## Estado
 
 - El trabajo está en la rama `claude/busy-gauss-lwcnlr` (pull request #1). Netlify publica una vista previa de cada cambio del pull request.
-- Modo en primera persona, en cinco etapas: 1 (cámara y controles), 2 (arena alta, cielo, horizonte), 3 (armas vistas en primera persona y arco punteado de los ataques por el aire) y 4 (minimapa redondo que gira con la cámara y ayuda de puntería en táctil: fricción, imán y marca, con opción en Controles táctiles) están hechas. Sigue la 5, ajuste fino: entre otras cosas, el brillo de cerca de las súper de Tuerca y Pompa, y los puños de Brasa, que se ven oscuros cuando está quieta.
+- Modo en primera persona, en cinco etapas, todas hechas: 1 (cámara y controles), 2 (arena alta, cielo, horizonte), 3 (armas vistas en primera persona y arco punteado de los ataques por el aire), 4 (minimapa redondo que gira con la cámara y ayuda de puntería en táctil: fricción, imán y marca, con opción en Controles táctiles) y 5 (ajuste fino: lo que pasa pegado al ojo se achica y se apaga, lo que dispara uno nace chico y apagado, la luz de la súper propia va más adelante y más suave, y el arma tiene una luz mínima propia; los puños de Brasa van más altos y con la lava más encendida).
+- Falta probarlo en un celular y con una placa de video de verdad: las pruebas renderizan por software y no miden rendimiento ni cómo se siente la ayuda de puntería.

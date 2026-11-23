@@ -25,7 +25,7 @@ Arena 3 contra 3 con vista cenital, en 3D real (three.js), que corre en el naveg
 
 - **Arriba:** la vista cenital de siempre.
 - **Al hombro:** cámara detrás del personaje, sobre el hombro derecho.
-- **Primera persona:** la cámara en los ojos del personaje. El cuerpo propio no se dibuja, pero se ven sus brazos o su arma: el taladro de Tuerca, los puños de Brasa, la ballesta de Nox, el frasco de Pompa, las cuchillas de Zip y el hacha de Tajo. Se balancean al caminar, se quedan un poco atrás al girar, bajan cuando no hay munición y cada ataque y cada súper tiene su movimiento. Los disparos salen del arma que se ve.
+- **Primera persona:** la cámara en los ojos del personaje. El cuerpo propio no se dibuja, pero se ven sus brazos o su arma: el taladro de Tuerca, los puños de Brasa, la ballesta de Nox, el frasco de Pompa, las cuchillas de Zip y el hacha de Tajo. Se balancean al caminar, se quedan un poco atrás al girar, bajan cuando no hay munición y cada ataque y cada súper tiene su movimiento. Los disparos salen del arma que se ve. El arma tiene una luz mínima propia, así se lee aunque el sol le dé de espaldas, y lo que pasa pegado a los ojos (chispas, humo, el halo de lo disparado) se achica y se apaga para no tapar la pantalla.
 
 Al hombro y en primera persona la arena cambia para que lo que frena los disparos también tape la vista: los muros suben uno o dos bloques de piedra, los cajones se apilan de a dos y el pasto crece; en la vista de arriba todo vuelve a quedar bajo, para no tapar a los personajes. El cambio es animado. Arriba hay cielo con sol y nubes, y alrededor islas a lo lejos; el horizonte se funde con la niebla. Los nombres de los rivales que quedan detrás de un muro no se muestran.
 
@@ -109,6 +109,7 @@ npm test           # juega una partida completa por personaje, sin ventana
 npm run qa         # capturas del menú y de las tres vistas en qa/out/
 node qa/punteria.mjs   # mide la ayuda de puntería en táctil (fricción, imán, escondidos)
 node qa/minimapa.mjs   # capturas del minimapa redondo girado y de la marca, en qa/out/
+node qa/armas.mjs      # capturas de cada arma en primera persona: quieta, atacando y en la súper
 ```
 
 Las pruebas necesitan `npx playwright install chromium` la primera vez. Para instalarlo en tu compu y trabajar con Claude Code ahí, ver `INSTALAR.md`.

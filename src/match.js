@@ -19,6 +19,13 @@ const NO_OFF = { x: 0, y: 0, z: 0 };
 // Lo que tira el jugador en primera persona nace achicado: recién salido del arma está a un
 // metro del ojo y taparía media pantalla. Recupera su tamaño en los primeros metros.
 const NEAR_K = 0.4;
+// La esfera de Tuerca y el frasco grande de Pompa son mucho más grandes que un disparo común:
+// a un metro del ojo, aun al 40 %, eran una bola encandilante. Nacen más chicos todavía.
+const NEAR_BIG = { orb: 0.2, bigflask: 0.28 };
+const nearK = (visual) => NEAR_BIG[visual] ?? NEAR_K;
+// El halo de lo disparado está pensado para verse desde arriba, a unos 20 m. En primera persona
+// uno lo sigue por detrás, justo en el centro de la mira, y tapaba la pantalla: va más chico.
+const OWN_HALO = 0.45;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const angDiff = (a, b) => {
   let d = (a - b) % TAU;
@@ -650,9 +657,10 @@ export class Match {
       // El anillo en el piso, visto desde los ojos, es una franja amarilla que cruza la pantalla.
       const own = f.isPlayer && this.vm.root.visible;
       if (!own) this.fx.ring(f.x, f.z, 0.5, 2.2, 0xffe14a, 0.4);
-      // Una luz en el centro del personaje quedaría pegada al arma y la encandilaría: va más adelante.
-      const ahead = own ? 2 : 0;
-      this.fx.flash(f.x + dx * ahead, 1.3, f.z + dz * ahead, 0xffe14a, 28, 0.35);
+      // Desde los ojos, la luz de siempre quedaría pegada al arma y bañaría de amarillo los muros
+      // cercanos, que ocupan media pantalla: va más adelante y más suave.
+      const ahead = own ? 3 : 0;
+      this.fx.flash(f.x + dx * ahead, 1.3, f.z + dz * ahead, 0xffe14a, own ? 10 : 28, 0.35);
       this.fx.text(f.x, f.rig.height + 0.9, f.z, f.def.super.name.toUpperCase() + '!', 'super');
     }
     if (f.isPlayer) this.zoomKick = 1;
@@ -681,7 +689,11 @@ export class Match {
         const mesh = this.fx.projectile(s.visual, color);
         const off = this.gunOffset(f, f.x, 0.9, f.z);
         mesh.position.set(f.x + off.x, 0.9 + off.y, f.z + off.z);
-        if (off !== NO_OFF) mesh.scale.setScalar(NEAR_K);
+        if (off !== NO_OFF) {
+          mesh.scale.setScalar(nearK(s.visual));
+          mesh.userData.halo.scale.multiplyScalar(OWN_HALO);
+          this.fx.ownShot(mesh);
+        }
         const mark = new THREE.Mesh(this.fx.geos.disc, zoneMaterial(color, 'warn'));
         mark.renderOrder = 2;
         mark.position.set(t.x, 0.05, t.z);
@@ -776,7 +788,11 @@ export class Match {
     const x = f.x + dx * 0.55, z = f.z + dz * 0.55;
     const off = this.gunOffset(f, x, 0.8, z, angDiff(ang, f.aim) > 0.01 ? 1 : 0);
     mesh.position.set(x + off.x, 0.8 + off.y, z + off.z);
-    if (off !== NO_OFF) mesh.scale.setScalar(NEAR_K);
+    if (off !== NO_OFF) {
+      mesh.scale.setScalar(nearK(s.visual));
+      mesh.userData.halo.scale.multiplyScalar(OWN_HALO);
+      this.fx.ownShot(mesh);
+    }
     mesh.rotation.y = ang;
     f.kick = 1;
     const recoil = s.pierce ? 3 : s.dmg > 800 ? 1.7 : 0.5; // el arma empuja hacia atrás al que dispara
@@ -1240,7 +1256,7 @@ export class Match {
         continue;
       }
       p.mesh.position.set(p.x, 0.8, p.z).add(this.visualOff(p.off, p.gone / 2.5));
-      if (p.off !== NO_OFF) p.mesh.scale.setScalar(NEAR_K + (1 - NEAR_K) * Math.min(1, p.gone / 3));
+      if (p.off !== NO_OFF) { const k0 = nearK(p.visual); p.mesh.scale.setScalar(k0 + (1 - k0) * Math.min(1, p.gone / 3)); }
       if (p.visual === 'ember' || p.visual === 'orb') p.mesh.userData.core.rotation.x += dt * 9;
       p.trail -= dt;
       if (p.trail <= 0) {
@@ -1257,7 +1273,7 @@ export class Match {
       l.t += dt;
       const u = Math.min(1, l.t / l.dur);
       l.mesh.position.set(l.fx + (l.tx - l.fx) * u, 0.9 + Math.sin(u * Math.PI) * 3.2 - u * 0.7, l.fz + (l.tz - l.fz) * u).add(this.visualOff(l.off, u / 0.35));
-      if (l.off !== NO_OFF) l.mesh.scale.setScalar(NEAR_K + (1 - NEAR_K) * Math.min(1, u / 0.4));
+      if (l.off !== NO_OFF) { const k0 = nearK(s.visual); l.mesh.scale.setScalar(k0 + (1 - k0) * Math.min(1, u / 0.4)); }
       l.mesh.userData.core.rotation.x += dt * 10;
       l.mark.material.uniforms.uAlpha.value = 0.55 + u * 0.6;
       if (u < 1) continue;

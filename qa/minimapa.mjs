@@ -42,9 +42,10 @@ for (const [nombre, tam] of [['escritorio', { ancho: 1440, alto: 900 }], ['celul
     }, { vista, yaw: base + (grados * Math.PI) / 180 });
     await page.waitForTimeout(2500);
     const nom = `qa/out/minimapa-${nombre}-${vista}-${grados}`;
-    await page.screenshot({ path: nom + '.png' });
+    // El render por software tarda: cada captura puede llevar más de medio minuto.
+    await page.screenshot({ path: nom + '.png', timeout: 120000 });
     const box = await page.locator('#minimap').boundingBox();
-    if (box) await page.screenshot({ path: nom + '-mapa.png', clip: { x: box.x - 4, y: box.y - 4, width: box.width + 8, height: box.height + 8 }, scale: 'device' });
+    if (box) await page.screenshot({ path: nom + '-mapa.png', clip: { x: box.x - 4, y: box.y - 4, width: box.width + 8, height: box.height + 8 }, scale: 'device', timeout: 120000 });
   }
   console.log(`${nombre}: capturas en qa/out/minimapa-${nombre}-*.png${errores.length ? ` · ${errores.length} errores:\n` + errores.slice(0, 5).join('\n') : ''}`);
   await cerrar();
