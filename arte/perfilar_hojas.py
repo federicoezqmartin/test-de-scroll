@@ -4,7 +4,6 @@
 #     extendido hacia el fondo para que no aparezca gris en las orillas;
 #   - src/perfiles/<id>.json : la silueta por alturas de cada parte del cuerpo, los puntos
 #     de giro (cadera, cuello, hombros) y dónde cae el eje del cuerpo en cada vista.
-# Tajo tiene su propio script (perfilar_tajo.py), anterior a este.
 #
 # Uso, desde la raíz del repo:
 #   ARTE_ORIGINALES=/carpeta/con/los/png python3 arte/perfilar_hojas.py [id ...]
@@ -23,53 +22,90 @@ DEBUG = os.environ.get('DEBUG_DIR')
 #          fondo como proporción del ancho.
 #   piv:   alturas de cadera, cuello y hombros, y columnas de piernas y brazos (vista de frente).
 HEROES = {
+    # Hojas realistas generadas con ChatGPT (arte/originales/<id>-realista-image.png): frente,
+    # perfil mirando a la derecha y espalda, sobre gris parejo. Las medidas salen de un medidor
+    # automático; donde la ropa tapa la anatomía (delantal, capa, mangas anchas) se completaron
+    # a mano o con proporciones humanas: cuello al 13 %, hombros al 19 % y cadera al 49 %.
     'tuerca': dict(
-        src='3e419a76', up=0.62, alto=1.72, top=32, bot=868, side=+1, strict=True,
-        views=dict(F=((30, 20, 580, 885), 311), S=((612, 20, 1035, 885), 830), B=((1100, 20, 1640, 885), 1366)),
+        src='tuerca-realista', up=1, alto=1.7, top=12, bot=991, side=+1, strict=True,
+        views=dict(F=((78, 0, 514, 1024), 290), S=((649, 0, 868, 1024), 763), B=((1013, 0, 1453, 1024), 1238)),
         parts=dict(
-            head=dict(rows=(152, 508), F=(80, 540), S=(620, 1025)),
-            body=dict(rows=(498, 745), F=(197, 440), S=(700, 925)),
-            armR=dict(rows=(522, 748), F=(30, 200), depth=0.9),
-            armL=dict(rows=(522, 760), F=(437, 575), depth=0.9),
-            legR=dict(rows=(700, 868), F=(140, 308), S=(725, 918)),
-            legL=dict(rows=(700, 868), F=(312, 480), S=(725, 918)),
+            head=dict(rows=(12, 144), F=(214, 366), S=(649, 868)),
+            body=dict(rows=(138, 530), F=(233, 363), S=(649, 868)),
+            armR=dict(rows=(179, 599), F=(78, 233), depth=0.9),
+            armL=dict(rows=(179, 599), F=(363, 514), depth=0.9),
+            legR=dict(rows=(472, 991), F=(157, 290), S=(649, 868)),
+            legL=dict(rows=(472, 991), F=(290, 423), S=(649, 868)),
         ),
-        piv=dict(hip=738, neck=506, shoulder=548, legR=222, legL=395, armR=188, armL=440),
+        piv=dict(hip=491, neck=144, shoulder=198, legR=215, legL=363, armR=243, armL=353),
     ),
     'brasa': dict(
-        src='30347cb9', up=2, alto=1.3, top=680, bot=876, side=-1, glow_floor=48,
-        views=dict(F=((10, 600, 295, 900), 152), S=((540, 600, 675, 900), 608), B=((700, 600, 990, 900), 848)),
+        src='brasa-realista', up=1, alto=1.92, top=15, bot=994, side=+1, strict=True,
+        views=dict(F=((22, 0, 549, 1024), 285), S=((614, 0, 895, 1024), 748), B=((980, 0, 1496, 1024), 1236)),
         parts=dict(
-            head=dict(rows=(680, 738), F=(92, 212), S=(548, 668)),
-            body=dict(rows=(730, 835), F=(86, 218), S=(548, 668)),
-            armR=dict(rows=(712, 852), F=(12, 92), depth=0.95),
-            armL=dict(rows=(712, 852), F=(214, 292), depth=0.95),
-            legR=dict(rows=(815, 876), F=(88, 152), S=(560, 660)),
-            legL=dict(rows=(815, 876), F=(152, 222), S=(560, 660)),
+            head=dict(rows=(15, 147), F=(219, 351), S=(614, 895)),
+            body=dict(rows=(141, 533), F=(169, 410), S=(614, 895)),
+            armR=dict(rows=(182, 602), F=(22, 169), depth=0.9),
+            armL=dict(rows=(182, 602), F=(410, 549), depth=0.9),
+            legR=dict(rows=(475, 994), F=(138, 285), S=(614, 895)),
+            legL=dict(rows=(475, 994), F=(285, 432), S=(614, 895)),
         ),
-        piv=dict(hip=822, neck=738, shoulder=730, legR=120, legL=186, armR=95, armL=210),
+        piv=dict(hip=494, neck=147, shoulder=201, legR=196, legL=366, armR=179, armL=400),
     ),
     'nox': dict(
-        src='bb32d7f7', up=2, alto=1.5, top=602, bot=857, side=-1,
-        views=dict(F=((15, 592, 265, 872), 133), S=((525, 592, 712, 872), 602), B=((728, 592, 932, 872), 830)),
+        src='nox-realista', up=1, alto=1.75, top=13, bot=990, side=+1, strict=True,
+        views=dict(F=((58, 0, 508, 1024), 283), S=((613, 0, 855, 1024), 742), B=((1014, 0, 1465, 1024), 1239)),
         parts=dict(
-            head=dict(rows=(641, 742), F=(50, 216), S=(530, 650)),  # arranca debajo de los mechones
-            body=dict(rows=(728, 846), F=(30, 244), S=(540, 708)),
-            legR=dict(rows=(836, 857), F=(70, 134), S=(560, 650)),
-            legL=dict(rows=(836, 857), F=(134, 200), S=(560, 650)),
+            head=dict(rows=(13, 144), F=(213, 353), S=(613, 855)),
+            body=dict(rows=(138, 530), F=(128, 439), S=(613, 855)),
+            armR=dict(rows=(179, 599), F=(58, 128), depth=0.9),
+            armL=dict(rows=(179, 599), F=(439, 508), depth=0.9),
+            legR=dict(rows=(472, 990), F=(170, 283), S=(613, 855)),
+            legL=dict(rows=(472, 990), F=(283, 396), S=(613, 855)),
         ),
-        piv=dict(hip=842, neck=738, shoulder=752, legR=102, legL=165, armR=60, armL=205),
+        piv=dict(hip=491, neck=144, shoulder=198, legR=229, legL=337, armR=160, armL=406),
     ),
     'pompa': dict(
-        src='89765357', up=2, alto=1.55, top=612, bot=870, side=-1,
-        views=dict(F=((22, 600, 262, 885), 144), S=((528, 600, 728, 885), 618), B=((722, 600, 942, 885), 832)),
+        src='pompa-realista', up=1, alto=1.62, top=20, bot=996, side=+1, strict=True,
+        views=dict(F=((29, 0, 539, 1024), 272), S=((604, 0, 888, 1024), 754), B=((988, 0, 1498, 1024), 1253)),
         parts=dict(
-            head=dict(rows=(612, 760), F=(48, 222), S=(535, 722)),
-            body=dict(rows=(748, 852), F=(36, 240), S=(535, 722)),
-            legR=dict(rows=(842, 870), F=(60, 141), S=(560, 690)),
-            legL=dict(rows=(842, 870), F=(141, 222), S=(560, 690)),
+            head=dict(rows=(20, 151), F=(189, 355), S=(604, 888)),
+            body=dict(rows=(145, 537), F=(186, 386), S=(604, 888)),
+            armR=dict(rows=(186, 605), F=(29, 186), depth=0.9),
+            armL=dict(rows=(186, 605), F=(386, 539), depth=0.9),
+            legR=dict(rows=(479, 996), F=(162, 272), S=(604, 888)),
+            legL=dict(rows=(479, 996), F=(272, 382), S=(604, 888)),
         ),
-        piv=dict(hip=848, neck=756, shoulder=770, legR=100, legL=184, armR=62, armL=228),
+        piv=dict(hip=498, neck=151, shoulder=205, legR=218, legL=326, armR=196, armL=376),
+    ),
+    'zip': dict(
+        src='zip-realista', up=1, alto=1.75, top=14, bot=907, side=+1, strict=True,
+        views=dict(F=((134, 0, 557, 941), 344), S=((702, 0, 901, 941), 829), B=((1105, 0, 1536, 941), 1324)),
+        parts=dict(
+            head=dict(rows=(14, 134), F=(283, 405), S=(702, 901)),
+            body=dict(rows=(128, 486), F=(244, 446), S=(702, 901)),
+            armR=dict(rows=(166, 549), F=(134, 244), depth=0.9),
+            armL=dict(rows=(166, 549), F=(446, 557), depth=0.9),
+            legR=dict(rows=(434, 907), F=(225, 347), S=(702, 901)),
+            legL=dict(rows=(434, 907), F=(347, 465), S=(702, 901)),
+        ),
+        piv=dict(hip=451, neck=134, shoulder=183, legR=292, legL=403, armR=256, armL=432),
+    ),
+    # Tajo realista (hoja generada con ChatGPT). La camisa es clara y se parece al gris del
+    # fondo: con strict solo cuenta como fondo el gris conectado con el borde. La mochila entra
+    # en el fondo del torso, por eso la ventana de perfil del cuerpo arranca bien atrás.
+    'tajo': dict(
+        src='tajo-realista', up=1, alto=1.85, top=18, bot=908, side=+1, strict=True,
+        views=dict(F=((140, 0, 580, 925), 357), S=((640, 0, 960, 925), 805), B=((1090, 0, 1535, 925), 1315)),
+        parts=dict(
+            head=dict(rows=(18, 142), F=(300, 415), S=(760, 900)),
+            body=dict(rows=(136, 520), F=(252, 462), S=(650, 905)),
+            armR=dict(rows=(190, 530), F=(140, 252), depth=0.9),
+            armL=dict(rows=(190, 530), F=(462, 575), depth=0.9),
+            legR=dict(rows=(505, 908), F=(228, 357), S=(735, 912)),
+            legL=dict(rows=(505, 908), F=(357, 492), S=(735, 912)),
+        ),
+        piv=dict(hip=510, neck=142, shoulder=205, legR=296, legL=416, armR=243, armL=471),
     ),
 }
 

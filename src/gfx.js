@@ -10,6 +10,7 @@ import { FXAAPass } from 'three/addons/postprocessing/FXAAPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { HorizontalTiltShiftShader } from 'three/addons/shaders/HorizontalTiltShiftShader.js';
 import { VerticalTiltShiftShader } from 'three/addons/shaders/VerticalTiltShiftShader.js';
+import { BASE_LOOK } from './looks.js';
 
 export const QUALITY_ORDER = ['baja', 'media', 'alta'];
 export const QUALITY = {
@@ -40,12 +41,12 @@ const GradeShader = {
   name: 'GradeShader',
   uniforms: {
     tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) },
-    uVig: { value: 0.28 }, uSat: { value: 1.14 }, uCon: { value: 1.08 }, uGrain: { value: 0.022 }, uCA: { value: 0 },
+    uVig: { value: 0.28 }, uSat: { value: 1.14 }, uCon: { value: 1.08 }, uGrain: { value: 0.022 }, uCA: { value: 0 }, uSplit: { value: 1 },
   },
   vertexShader: 'varying vec2 vUv;\nvoid main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uTime, uVig, uSat, uCon, uGrain, uCA;
+    uniform float uTime, uVig, uSat, uCon, uGrain, uCA, uSplit;
     uniform vec2 uRes;
     varying vec2 vUv;
     float hash(vec2 p) { p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
@@ -61,7 +62,9 @@ const GradeShader = {
       c = (c - 0.5) * uCon + 0.5;
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = mix(vec3(l), c, uSat);
-      c *= mix(vec3(0.95, 0.99, 1.07), vec3(1.05, 1.01, 0.95), smoothstep(0.05, 0.9, l));
+      // virado: sombras frías, luces cálidas; uSplit dice cuánto (cada vista tiene el suyo)
+      vec3 tint = mix(vec3(0.95, 0.99, 1.07), vec3(1.05, 1.01, 0.95), smoothstep(0.05, 0.9, l));
+      c *= mix(vec3(1.0), tint, uSplit);
       c *= 1.0 - uVig * smoothstep(0.1, 0.55, r2);
       c += (hash(vUv * uRes + fract(uTime) * 91.7) - 0.5) * uGrain;
       gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
@@ -80,6 +83,7 @@ export class Gfx {
     // Sin esta extensión no se puede dibujar en buffers de alto rango: se juega sin posprocesado.
     const ext = renderer.extensions;
     this.canPost = renderer.capabilities.isWebGL2 !== false && (ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float'));
+    this.look = BASE_LOOK; // exposición, resplandor y color de la vista (ver looks.js)
     this.blank = new THREE.Scene();
     this.blankCam = new THREE.PerspectiveCamera();
   }
@@ -134,13 +138,28 @@ export class Gfx {
     this.opts = { bloom: o.bloom !== false, tilt: o.tilt !== false, grade: o.grade !== false };
     if (!this.composer) return;
     this.bloom.enabled = this.opts.bloom;
-    if (this.tiltH) this.tiltH.enabled = this.tiltV.enabled = this.opts.tilt;
-    const u = this.grade.uniforms, on = this.opts.grade;
-    u.uVig.value = on ? 0.28 : 0;
-    u.uSat.value = on ? 1.14 : 1;
-    u.uCon.value = on ? 1.08 : 1;
-    u.uGrain.value = on ? 0.022 : 0;
+    if (this.tiltH) this.tiltH.enabled = this.opts.tilt;
+    if (this.tiltV) this.tiltV.enabled = this.opts.tilt;
+    this.applyLook();
+  }
+
+  // Look de la vista. Se llama en cada cuadro: son unos pocos valores, no rearma nada.
+  setLook(look) {
+    this.look = look;
+    this.renderer.toneMappingExposure = look.exposure;
+    if (this.composer) this.applyLook();
+  }
+
+  // Con "Color de cine" apagado la imagen queda neutra en todas las vistas.
+  applyLook() {
+    const u = this.grade.uniforms, on = this.opts ? this.opts.grade : true, l = this.look;
+    u.uVig.value = on ? l.vig : 0;
+    u.uSat.value = on ? l.sat : 1;
+    u.uCon.value = on ? l.con : 1;
+    u.uGrain.value = on ? l.grain : 0;
+    u.uSplit.value = on ? l.split : 0;
     u.uCA.value = on && this.q.ao ? 0.005 : 0;
+    this.bloom.strength = l.bloom;
   }
 
   setSize(w, h) {

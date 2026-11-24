@@ -10,6 +10,7 @@ import { UI } from './ui.js';
 import { audio } from './audio.js';
 import { artUrl, preloadArt } from './assets.js';
 import { Gfx, QUALITY, QUALITY_ORDER } from './gfx.js';
+import { BASE_LOOK } from './looks.js';
 import { settings, setSetting, onSettings, autoLevel } from './settings.js';
 
 const canvas = document.getElementById('game');
@@ -373,9 +374,11 @@ function loop(now) {
   }
   if (state === 'menu') {
     showcase.update(dt);
+    gfx.setLook(BASE_LOOK);
     gfx.render(showcase.scene, showcase.camera, dt);
   } else if (match) {
     if (!paused) match.update(dt);
+    gfx.setLook(match.look);
     gfx.render(match.scene, match.camera, dt);
     watchFps(raw);
   }

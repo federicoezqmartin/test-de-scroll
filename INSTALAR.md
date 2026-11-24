@@ -72,8 +72,7 @@ Los originales están en `arte/originales/`. Si cambiás o agregás arte:
 ```bash
 python3 -m pip install pillow numpy
 python3 arte/procesar_arte.py      # texturas, logo, núcleo, fichas
-python3 arte/perfilar_hojas.py     # cuerpos de Tuerca, Brasa, Nox y Pompa
-python3 arte/perfilar_tajo.py      # cuerpo de Tajo
+python3 arte/perfilar_hojas.py     # cuerpos de los seis personajes
 ```
 
 En Windows usá `py` en lugar de `python3`. Los detalles de cada script están en el `README.md`.
