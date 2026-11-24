@@ -111,10 +111,10 @@ export class ViewModel {
     const r = this.rig;
     switch (this.id) {
       case 'tuerca': {
-        // El brazo taladro, apuntando hacia la mira.
-        const L = -this.armTip(r.armR);
+        // El brazo con la remachadora, apuntando hacia la mira. Dispara desde la punta del caño.
+        const L = -this.armTip(r.armR), g = r.acc.gun.position;
         this.main = this.slot(r.armR, [0.32, -0.3, -1.15], [-0.22, 0.3, -1], L);
-        this.muzzle(r.armR, 0, -L - 0.04, 0);
+        this.muzzle(r.armR, g.x, g.y - 0.34, g.z + 0.03);
         this.flash = this.flashSprite(0x8ff6ff);
         this.muzzles[0].add(this.flash);
         break;
@@ -139,9 +139,10 @@ export class ViewModel {
         break;
       }
       case 'pompa': {
-        // Una mano de rana sosteniendo el frasco; el frasco desaparece al tirarlo y vuelve.
+        // La mano con su guante de goma amarillo sosteniendo el frasco; el frasco desaparece al
+        // tirarlo y vuelve.
         const hand = new THREE.Group();
-        const skin = new THREE.MeshStandardMaterial({ color: 0x6fae2a, roughness: 0.5 });
+        const skin = new THREE.MeshStandardMaterial({ color: 0xd9ad2e, roughness: 0.45 });
         const palm = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), skin);
         palm.scale.set(1.1, 0.7, 1.2);
         hand.add(palm);
@@ -161,16 +162,12 @@ export class ViewModel {
       }
       case 'zip': {
         // Con los brazos hacia adelante, las cuchillas van a lo largo del brazo, más allá del puño.
-        for (const arm of [r.armL, r.armR]) {
-          const [, , grip, blade] = arm.children;
-          grip.rotation.x = blade.rotation.x = PI / 2;
-          grip.position.set(0, -0.4, 0);
-          blade.position.set(0, -0.72, 0);
-        }
-        this.main = this.slot(r.armR, [0.3, -0.36, -0.8], [-0.25, 0.3, -1], 0.34);
-        this.off = this.slot(r.armL, [-0.3, -0.36, -0.8], [0.25, 0.3, -1], 0.34);
-        this.muzzle(r.armR, 0, -0.9, 0);
-        this.muzzle(r.armL, 0, -0.9, 0);
+        for (const g of r.acc.blades) g.rotation.x = PI / 2;
+        const L = -this.armTip(r.armR);
+        this.main = this.slot(r.armR, [0.3, -0.36, -0.8], [-0.25, 0.3, -1], L, { scale: 0.8 });
+        this.off = this.slot(r.armL, [-0.3, -0.36, -0.8], [0.25, 0.3, -1], L, { scale: 0.8 });
+        this.muzzle(r.armR, 0, -L - 0.4, 0);
+        this.muzzle(r.armL, 0, -L - 0.4, 0);
         break;
       }
       case 'tajo': {

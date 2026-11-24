@@ -14,11 +14,11 @@ Arena 3 contra 3 con vista cenital, en 3D real (three.js), que corre en el naveg
 
 | Personaje | Rol | Ataque | Súper |
 |---|---|---|---|
-| Tuerca (robot) | Tiradora | Ráfaga de 3 remaches | Esfera de plasma que atraviesa |
-| Brasa (gólem de lava) | Tanque | Abanico de ascuas | Salto que aplasta la zona |
-| Nox (lechuza) | Francotiradora | Dardo de largo alcance | Lluvia de estrellas en un área |
-| Pompa (rana) | Lanzadora | Frasco que pasa sobre los muros | Charco tóxico |
-| Zip (conejo ninja) | Asesino | Dos tajos cuerpo a cuerpo | Embestida instantánea |
+| Tuerca (mecánica con remachadora) | Tiradora | Ráfaga de 3 remaches | Esfera de plasma que atraviesa |
+| Brasa (herrero de fundición) | Tanque | Abanico de ascuas | Salto que aplasta la zona |
+| Nox (exploradora con ballesta) | Francotiradora | Dardo de largo alcance | Lluvia de estrellas en un área |
+| Pompa (química) | Lanzadora | Frasco que pasa sobre los muros | Charco tóxico |
+| Zip (corredor de parkour con cuchillas) | Asesino | Dos tajos cuerpo a cuerpo | Embestida instantánea |
 | Tajo (zanjero con hacha) | Embestidor | Hachazo: se lanza hacia adelante cortando | Zanja en línea que daña, empuja y lo cura |
 
 **Vistas** (Configuración → Cámara, o la tecla V durante la partida):
@@ -94,8 +94,8 @@ En "Auto" arranca en Alta (Media en pantallas táctiles) y, si durante la partid
 - **Escombros con física** (`src/physics.js`): tablas, esquirlas, piezas y casquillos caen con gravedad, rebotan contra el piso y los muros, quedan apoyados y, si caen al agua, salpican.
 - **Cajones que se rompen:** aguantan 1500 de daño; los disparos les sacan astillas y las explosiones los parten. Al romperse abren el paso (los bots lo aprovechan).
 - **Pasto que se corta:** el salto de Brasa, el charco de Pompa y la zanja de Tajo lo cortan, y ahí ya no se puede esconder nadie. Las explosiones además lo aplastan un instante.
-- **Golpes:** cada personaje pierde lo que le corresponde: sangre que mancha el piso (Nox, Pompa, Zip, Tajo), aceite y chispas (Tuerca) o brasas y cascotes (Brasa). El cuerpo se inclina hacia donde lo empujan, y con poca vida gotea o larga humo.
-- **Muertes:** los de carne caen hacia donde vino el golpe y dejan un charco; el robot y el gólem se desarman en piezas.
+- **Golpes:** sangre que mancha el piso. El cuerpo se inclina hacia donde lo empujan, y con poca vida gotea.
+- **Muertes:** caen hacia donde vino el golpe y dejan un charco. (El código para desarmarse en piezas y perder aceite o brasas sigue en `match.js`, aunque hoy ningún personaje lo usa.)
 - **Movimiento y armas:** inercia al arrancar y frenar, retroceso al disparar y casquillos en los remaches de Tuerca.
 - **Sangre** se apaga en Configuración. Apagada, los golpes sueltan chispas blancas y no quedan manchas.
 
@@ -142,17 +142,18 @@ src/settings.js   configuración: valores, guardado y lista de controles
 
 El arte se generó con IA a partir de prompts y vive en dos carpetas:
 
-- `public/arte/`: lo que usa el juego (alrededor de 1,6 MB). Texturas de arena, piedra, cajón y pasto; el núcleo y el logo recortados; las fichas de los personajes (`ficha-*.webp`) que se ven en el menú; las hojas de personaje listas para proyectar (`hoja-*.webp`, `tajo-hoja.webp`); el material de acero; y los mapas de relieve `*-n.webp`.
+- `public/arte/`: lo que usa el juego (alrededor de 1,6 MB). Texturas de arena, piedra, cajón y pasto; el núcleo y el logo recortados; las fichas de los personajes (`ficha-*.webp`) que se ven en el menú; las hojas de personaje listas para proyectar (`hoja-*.webp`); el material de acero; y los mapas de relieve `*-n.webp`.
 - `arte/referencias/`: copias reducidas de las imágenes originales, para seguir ajustando los modelos.
 
 `arte/procesar_arte.py` es el script que convierte los originales (`arte/originales/`) en los archivos de `public/arte/`; necesita Python con Pillow y numpy.
 
-Dentro de la partida, cinco de los seis personajes se arman a partir de su hoja de arte:
+Los seis personajes son personas de aspecto realista y se arman a partir de su hoja de arte:
 
-- **Tuerca, Brasa, Nox y Pompa:** `arte/perfilar_hojas.py` toma de cada hoja las vistas de frente, perfil y espalda, mide la silueta de cada parte (cabeza, torso, brazos, piernas) y guarda las tres vistas juntas en `public/arte/hoja-<id>.webp` y las medidas en `src/perfiles/<id>.json`. Con eso `models.js` levanta cada cuerpo por rodajas y lo pinta proyectando la hoja de frente, perfil y espalda, así se ve como el dibujo desde cualquier ángulo. Lo que brilla en el dibujo (el ojo de Tuerca, la lava de Brasa, los ojos de Nox) brilla también en el juego.
-- **Tajo** usa el mismo método, con su propio script (`arte/perfilar_tajo.py`, `src/tajo-perfil.json`), que es anterior.
-- Algunas piezas van aparte, hechas con formas simples, porque se mueven o hay que verlas desde arriba: la antena de Tuerca, la llama de Brasa, los mechones y la ballesta de Nox, el frasco de Pompa, el hacha y el farol de Tajo.
-- **Zip** todavía no tiene hoja de arte: es un modelo de formas simples y usa una foto de ese modelo como retrato.
+- **Hojas:** cada una se generó con ChatGPT como una hoja de personaje con tres vistas en fila (frente, perfil mirando a la derecha y espalda), en pose A, sobre gris parejo. Están en `arte/originales/<id>-realista-image.png`.
+- **Cuerpos:** `arte/perfilar_hojas.py` toma de cada hoja las tres vistas, mide la silueta de cada parte (cabeza, torso, brazos, piernas) y guarda las vistas juntas en `public/arte/hoja-<id>.webp` y las medidas en `src/perfiles/<id>.json`. Con eso `models.js` levanta cada cuerpo por rodajas y lo pinta proyectando la hoja, así se ve como el dibujo desde cualquier ángulo. Las brasas de los guantes de Brasa brillan solas.
+- **Armas:** van aparte, hechas con formas simples, porque se mueven: la remachadora de Tuerca, la ballesta de Nox, el frasco de Pompa, las cuchillas de Zip, y el hacha y el farol de Tajo. Se ubican en la mano que mide el perfil.
+- **Retratos del menú:** `procesar_arte.py` recorta la vista de frente de cada hoja.
+- **De cerca:** en primera persona el brazo queda pegado a la cámara y la piel de la hoja se ve estirada; el método por rodajas no aguanta un primer plano tan cercano.
 
 Para ajustar un personaje (qué filas ocupa cada parte, dónde giran los brazos) se edita la tabla `HEROES` de `perfilar_hojas.py` y se vuelve a correr; con `DEBUG_DIR` guarda una imagen de control con lo que midió.
 

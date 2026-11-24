@@ -1,14 +1,15 @@
-// Personajes 3D armados con primitivas, siguiendo las hojas de arte (arte/referencias).
+// Personajes 3D armados desde sus hojas de arte realistas (arte/originales/*-realista-image.png).
 // Todos miran hacia +Z y comparten esqueleto: root > hips > (legL, legR, torso > (head, armL, armR)).
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { tex } from './assets.js';
 import { heroUniforms, patchHero, projectedMaterial } from './shaders.js';
-import TAJO from './tajo-perfil.json';
 import P_TUERCA from './perfiles/tuerca.json';
 import P_BRASA from './perfiles/brasa.json';
 import P_NOX from './perfiles/nox.json';
 import P_POMPA from './perfiles/pompa.json';
+import P_TAJO from './perfiles/tajo.json';
+import P_ZIP from './perfiles/zip.json';
 
 const PI = Math.PI;
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.05, ...o });
@@ -36,77 +37,9 @@ function baseRig(hipY, height) {
   return { root, hips, legL, legR, torso, head, armL, armR, hipY, height, seed: Math.random() * 10, armSwing: 1, kickArm: 0.5, custom: null };
 }
 
-// --- Zip: conejo ninja --------------------------------------------------------
-function zip() {
-  const r = baseRig(0.4, 1.75);
-  const suit = std(0x3b3d4a), fur = std(0xdcdce2), pinkIn = std(0xff9bb5), red = std(0xe0263f, { roughness: 0.8 });
-  const blade = std(0xdff6ff, { metalness: 0.7, roughness: 0.2, emissive: 0x66d9ff, emissiveIntensity: 0.4 });
-  const black = std(0x101018, { roughness: 0.3 }), dark = std(0x1b1c26);
-
-  for (const [leg, x] of [[r.legL, 0.13], [r.legR, -0.13]]) {
-    leg.position.x = x;
-    part(new THREE.CapsuleGeometry(0.075, 0.2, 4, 8), suit, leg, 0, -0.17, 0);
-    part(new RoundedBoxGeometry(0.15, 0.09, 0.28, 1, 0.03), fur, leg, 0, -0.35, 0.05);
-  }
-  part(new THREE.CapsuleGeometry(0.22, 0.3, 6, 14), suit, r.torso, 0, 0.3, 0).scale.set(1.05, 1, 0.85);
-  part(new THREE.CylinderGeometry(0.235, 0.235, 0.08, 14), red, r.torso, 0, 0.14, 0).scale.set(1.05, 1, 0.85);
-  part(new THREE.SphereGeometry(0.1, 10, 8), fur, r.torso, 0, 0.1, -0.24);
-
-  r.head.position.set(0, 0.82, 0);
-  part(new THREE.SphereGeometry(0.3, 20, 16), fur, r.head).scale.set(1, 0.95, 0.95);
-  part(new THREE.CylinderGeometry(0.295, 0.302, 0.1, 18, 1, true), red, r.head, 0, 0.13, 0).scale.set(1, 1, 0.95);
-  for (const x of [0.11, -0.11]) part(new THREE.SphereGeometry(0.045, 8, 8), black, r.head, x, 0.01, 0.265).scale.set(1.2, 0.8, 0.6);
-  part(new THREE.SphereGeometry(0.035, 8, 6), pinkIn, r.head, 0, -0.08, 0.285);
-  const ears = [];
-  for (const x of [0.12, -0.12]) {
-    const ear = new THREE.Group();
-    ear.position.set(x, 0.22, -0.04);
-    r.head.add(ear);
-    part(new THREE.CapsuleGeometry(0.065, 0.42, 4, 8), fur, ear, 0, 0.28, 0).scale.set(1, 1, 0.6);
-    part(new THREE.CapsuleGeometry(0.035, 0.32, 3, 6), pinkIn, ear, 0, 0.28, 0.03).scale.set(1, 1, 0.5);
-    ear.userData.side = Math.sign(x);
-    ears.push(ear);
-  }
-  part(new THREE.TorusGeometry(0.2, 0.07, 8, 16), red, r.torso, 0, 0.6, 0).rotation.x = PI / 2;
-  const tails = [];
-  for (const x of [0.06, -0.06]) {
-    const t = new THREE.Group();
-    t.position.set(x, 0.6, -0.2);
-    r.torso.add(t);
-    part(new THREE.BoxGeometry(0.1, 0.035, 0.46), red, t, 0, 0, -0.23);
-    tails.push(t);
-  }
-  for (const [arm, x] of [[r.armL, 0.3], [r.armR, -0.3]]) {
-    arm.position.set(x, 0.5, 0);
-    part(new THREE.CapsuleGeometry(0.06, 0.24, 4, 8), suit, arm, 0, -0.16, 0);
-    part(new THREE.SphereGeometry(0.075, 10, 8), fur, arm, 0, -0.34, 0);
-    part(new THREE.BoxGeometry(0.05, 0.05, 0.14), dark, arm, 0, -0.34, 0.08);
-    part(new THREE.BoxGeometry(0.035, 0.09, 0.56), blade, arm, 0, -0.34, 0.42);
-  }
-  r.armSwing = 1.1;
-  r.kickArm = 0;
-  r.custom = (s) => {
-    for (const e of ears) {
-      e.rotation.x = -0.25 - s.move * 0.55 + Math.sin(s.t * 2.2 + r.seed) * 0.05;
-      e.rotation.z = -e.userData.side * (0.16 + Math.sin(s.t * 1.7 + r.seed + e.userData.side) * 0.05);
-    }
-    tails.forEach((t, i) => {
-      t.rotation.x = -0.5 + s.move * 0.45 + Math.sin(s.t * 7 + i * 1.3) * (0.1 + s.move * 0.2);
-      t.rotation.y = Math.sin(s.t * 5 + i * 2) * 0.25;
-    });
-    const k = s.kick;
-    r.armR.rotation.x += -1.3 * k;
-    r.armR.rotation.z = -1.1 * Math.sin(k * PI);
-    r.armL.rotation.x += -1.3 * k;
-    r.armL.rotation.z = 1.1 * Math.sin(k * PI);
-    r.torso.rotation.x += s.move * 0.12;
-  };
-  return r;
-}
-
 // --- Cuerpos armados desde la hoja de arte ---------------------------------------
-// Tuerca, Brasa, Nox, Pompa y Tajo no están hechos de primitivas: cada cuerpo se arma con la
-// silueta medida en su hoja de arte (src/perfiles/*.json, src/tajo-perfil.json) y se pinta
+// Los seis personajes no están hechos de primitivas: cada cuerpo se arma con la
+// silueta medida en su hoja de arte (src/perfiles/*.json) y se pinta
 // proyectando esa misma hoja de frente, perfil y espalda.
 
 // Cuerpo por rodajas: cada fila es [y, centroX, semiAncho, centroZ, semiFondo], de arriba a abajo.
@@ -198,48 +131,46 @@ function sheetRig(d, atlas, o = {}) {
   return r;
 }
 
-// --- Tuerca: robot de taller. La antena va aparte, para que se mueva. -----------
+// Mano de un brazo, en coordenadas del brazo: el centro de su última rodaja en el perfil.
+// Ahí van las armas, así quedan en la mano sin medir píxeles a mano.
+function handOf(d, name) {
+  const rows = d.parts[name], [y, cx, , cz] = rows[rows.length - 1];
+  return new THREE.Vector3(cx - d.piv[name], y - d.piv.shoulder, cz);
+}
+
+// --- Tuerca: mecánica con remachadora. El arma va en la mano derecha. -------------
 function tuerca() {
-  const r = sheetRig(P_TUERCA, 'hoja-tuerca.webp', { glow: [-1, 0, 1, 1.2], headPow: 2, bodyPow: 2.6 });
+  const d = P_TUERCA;
+  const r = sheetRig(d, 'hoja-tuerca.webp', { headPow: 2.1, bodyPow: 2.4 });
   const steel = std(0xffffff, { map: tex('mat-acero.webp'), metalness: 0.75, roughness: 0.42, ...steelN() });
-  const ant = new THREE.Group();
-  ant.position.set(0, r.headTop - 0.02, 0);
-  r.head.add(ant);
-  part(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 6), steel, ant, 0, 0.1, 0);
-  part(new THREE.SphereGeometry(0.06, 12, 10), std(0xd0211c, { roughness: 0.25 }), ant, 0, 0.22, 0);
+  const orange = std(0xc65a24, { roughness: 0.55 }), dark = std(0x24262b, { roughness: 0.5, metalness: 0.4 });
+  // El brazo cuelga hacia -y; el caño sigue esa dirección, así apunta adelante con el brazo levantado.
+  const gun = new THREE.Group();
+  gun.position.copy(handOf(d, 'armR'));
+  r.armR.add(gun);
+  part(new RoundedBoxGeometry(0.09, 0.2, 0.13, 2, 0.02), orange, gun, 0, -0.06, 0.02);
+  part(new THREE.CylinderGeometry(0.028, 0.032, 0.26, 10), steel, gun, 0, -0.2, 0.03);
+  part(new THREE.BoxGeometry(0.05, 0.1, 0.06), dark, gun, 0, 0.01, -0.06);
   r.armSwing = 0.5;
   r.kickArm = 0;
   r.custom = (s) => {
-    ant.rotation.z = Math.sin(s.t * 6 + r.seed) * 0.12 + Math.sin(s.phase) * 0.2 * s.move;
-    // El brazo taladro apunta hacia adelante y retrocede con cada disparo.
-    r.armR.rotation.x = -0.6 - s.kick * 0.8 + Math.sin(s.phase) * 0.15 * s.move;
-    r.legL.rotation.x *= 0.7;
-    r.legR.rotation.x *= 0.7;
-    r.head.rotation.z = Math.sin(s.phase) * 0.04 * s.move;
+    // Apunta con el brazo estirado; cada remache lo levanta un poco.
+    r.armR.rotation.x = -1.35 - s.kick * 0.4 + Math.sin(s.phase) * 0.1 * s.move;
+    r.legL.rotation.x *= 0.8;
+    r.legR.rotation.x *= 0.8;
   };
+  r.acc = { gun }; // accesorios que usa la vista en primera persona
   return r;
 }
 
-// --- Brasa: gólem de lava. Las grietas brillan solas; la llama va aparte. --------
+// --- Brasa: herrero de fundición. Las brasas de sus guantes brillan solas. --------
 function brasa() {
-  const r = sheetRig(P_BRASA, 'hoja-brasa.webp', { glow: [1, 0, -1, 1.5], headPow: 2.4, bodyPow: 2.5, extra: 0.35, dome: 0.07 });
-  const hot = glow(0xffb81a, 1.9), fire = glow(0xff5a0a, 1.5);
-  const flame = new THREE.Group();
-  flame.position.set(0, r.headTop, -0.03);
-  r.head.add(flame);
-  const f1 = part(new THREE.ConeGeometry(0.15, 0.4, 7), fire, flame, 0, 0.18, 0);
-  const f2 = part(new THREE.ConeGeometry(0.09, 0.3, 6), hot, flame, 0.02, 0.16, 0.03);
-  const f3 = part(new THREE.ConeGeometry(0.07, 0.24, 6), fire, flame, -0.11, 0.1, 0);
-  f1.castShadow = f2.castShadow = f3.castShadow = false;
-  const lava = r.art.userData.glow.value;
+  const r = sheetRig(P_BRASA, 'hoja-brasa.webp', { glow: [1, 0, -1, 1.4], headPow: 2.2, bodyPow: 2.5 });
+  const embers = r.art.userData.glow.value;
   r.armSwing = 0.5;
   r.kickArm = 0;
   r.custom = (s) => {
-    const k = 1 + Math.sin(s.t * 11 + r.seed) * 0.16 + Math.sin(s.t * 17) * 0.1;
-    f1.scale.set(1, k, 1);
-    f2.scale.set(1, 2 - k, 1);
-    f3.rotation.z = 0.3 + Math.sin(s.t * 9) * 0.2;
-    lava.w = 1.4 + Math.sin(s.t * 3 + r.seed) * 0.3 + s.kick * 1.6; // la lava late y se enciende al atacar
+    embers.w = 1.2 + Math.sin(s.t * 3 + r.seed) * 0.3 + s.kick * 1.6; // laten y se encienden al atacar
     r.armL.rotation.x -= s.kick * 1.4;
     r.armR.rotation.x -= s.kick * 1.4;
     r.legL.rotation.x *= 0.6;
@@ -248,20 +179,15 @@ function brasa() {
   return r;
 }
 
-// --- Nox: lechuza arquera. La ballesta 3D va delante, para que se vea a dónde apunta. --
+// --- Nox: exploradora con ballesta, sostenida adelante con las dos manos. ---------
 function nox() {
-  const d = P_NOX;
-  const r = sheetRig(d, 'hoja-nox.webp', { glow: [-1, 0, 1, 1.2], headPow: 2.2, bodyPow: 2.3, dome: 0.17, bodyDome: 0.1 });
-  const wood = std(0x6b4226), teal = glow(0x25e6c0, 1), navy = std(0x2c2b55, { roughness: 0.85 });
-  // Los mechones de las orejas van aparte: en la hoja son dos puntas sueltas.
-  for (const sd of [1, -1]) {
-    const tuft = part(new THREE.ConeGeometry(0.11, 0.34, 5), navy, r.head, sd * 0.25, r.headTop + 0.12, -0.02);
-    tuft.rotation.z = -sd * 0.42;
-  }
+  const d = P_NOX, P = d.piv;
+  const r = sheetRig(d, 'hoja-nox.webp', { headPow: 2.1, bodyPow: 2.3 });
+  const wood = std(0x6b4226), teal = glow(0x25e6c0, 1);
   // Ballesta: culata, arco curvo hacia adelante con su cuerda tensa y el dardo cargado. Se ve
   // de cerca en primera persona, por eso tiene más detalle que el resto de los accesorios.
   const bow = new THREE.Group();
-  bow.position.set(-0.06, 0.5 - d.piv.hip, 0.42);
+  bow.position.set(-0.04, P.shoulder - 0.3 - P.hip, 0.36);
   r.torso.add(bow);
   const metal = std(0x3a3f4c, { metalness: 0.65, roughness: 0.38 }), cord = std(0xe8e2cf, { roughness: 0.9 });
   part(new RoundedBoxGeometry(0.075, 0.075, 0.64, 2, 0.02), wood, bow, 0, 0, 0.09);
@@ -282,69 +208,80 @@ function nox() {
   r.armSwing = 0;
   r.kickArm = 0;
   r.custom = (s) => {
-    bow.position.z = 0.42 - s.kick * 0.14;
-    r.head.rotation.z = Math.sin(s.t * 0.7 + r.seed) * 0.08 * (1 - s.move);
-    r.torso.rotation.z = Math.sin(s.phase) * 0.07 * s.move; // camina balanceándose
+    bow.position.z = 0.36 - s.kick * 0.12;
+    // Los dos brazos van adelante y hacia el centro, sosteniendo la ballesta.
+    r.armR.rotation.set(-1.05 - s.kick * 0.15, 0, 0.42);
+    r.armL.rotation.set(-0.95 - s.kick * 0.15, 0, -0.5);
+    r.torso.rotation.z = Math.sin(s.phase) * 0.04 * s.move;
   };
   r.acc = { bow }; // accesorios que usa la vista en primera persona
   return r;
 }
 
-// --- Pompa: sapo alquimista. El frasco de la mano va aparte: lo lanza al atacar. ---
+// --- Pompa: química. El frasco va en la mano derecha: lo lanza al atacar. ---------
 function pompa() {
   const d = P_POMPA;
-  const r = sheetRig(d, 'hoja-pompa.webp', { headPow: 2.2, bodyPow: 2.3, bodyDome: 0.06 });
+  const r = sheetRig(d, 'hoja-pompa.webp', { headPow: 2.2, bodyPow: 2.4 });
   const pink = glow(0xff4fb0, 1.5), glass = std(0xbfe9ff, { roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.65 });
   const flask = new THREE.Group();
-  flask.position.set(0.5, 0.74 - d.piv.hip, 0.24);
-  r.torso.add(flask);
-  part(new THREE.SphereGeometry(0.13, 14, 12), pink, flask);
-  part(new THREE.CylinderGeometry(0.04, 0.055, 0.12, 8), glass, flask, 0, 0.15, 0);
-  part(new THREE.CylinderGeometry(0.045, 0.045, 0.045, 8), std(0x7a4a26), flask, 0, 0.23, 0);
-  r.armSwing = 0;
+  flask.position.copy(handOf(d, 'armR')).add(new THREE.Vector3(0, -0.04, 0.05));
+  r.armR.add(flask);
+  part(new THREE.SphereGeometry(0.11, 14, 12), pink, flask);
+  part(new THREE.CylinderGeometry(0.035, 0.05, 0.1, 8), glass, flask, 0, 0.13, 0);
+  part(new THREE.CylinderGeometry(0.04, 0.04, 0.04, 8), std(0x7a4a26), flask, 0, 0.2, 0);
+  r.armSwing = 0.6;
   r.kickArm = 0;
   r.custom = (s) => {
-    r.torso.scale.y = 1 + Math.sin(s.t * 2.6 + r.seed) * 0.03; // respira
     flask.scale.setScalar(1 - s.kick * 0.7);
-    r.hips.position.y += Math.abs(Math.sin(s.phase)) * 0.1 * s.move; // avanza a saltitos
-    r.head.rotation.z = Math.sin(s.phase) * 0.05 * s.move;
+    r.armR.rotation.x -= s.kick * 2.2; // tira por arriba
+    r.head.rotation.z = Math.sin(s.phase) * 0.04 * s.move;
   };
   r.acc = { flask }; // accesorios que usa la vista en primera persona
   return r;
 }
 
-// --- Tajo: zanjero con hacha (su perfil es anterior y trae otro formato) ----------
-function tajo() {
-  const d = TAJO, U = d.u, K = d.alto / 1.75; // K: escala de los accesorios
-  const yOf = (px) => (d.bot - px) * U, xOf = (px) => (px - d.cxF) * U;
-  const hipY = yOf(560), neckY = yOf(198), shoulderY = yOf(266);
-  const r = baseRig(hipY, d.alto + 0.05);
-  const art = projectedMaterial(tex('tajo-hoja.webp'));
-  const body = (name, parent, pivotX, pivotY, seg, power) => {
-    const m = new THREE.Mesh(projectSheet(loft(d.parts[name], seg, power), d), art);
-    m.position.set(-pivotX, -pivotY, 0); // la malla está en coordenadas del cuerpo entero
-    m.castShadow = true;
-    parent.add(m);
-    return m;
+// --- Zip: corredor de parkour con dos cuchillas, una en cada mano. -----------------
+function zip() {
+  const d = P_ZIP;
+  const r = sheetRig(d, 'hoja-zip.webp', { headPow: 2.1, bodyPow: 2.2 });
+  const steel = std(0xdff6ff, { metalness: 0.7, roughness: 0.2, emissive: 0x66d9ff, emissiveIntensity: 0.4 }), dark = std(0x1b1c26);
+  // Con el brazo colgando, la hoja sale hacia adelante desde el puño.
+  const blades = [];
+  for (const name of ['armL', 'armR']) {
+    const g = new THREE.Group();
+    g.position.copy(handOf(d, name));
+    r[name].add(g);
+    part(new THREE.BoxGeometry(0.05, 0.05, 0.14), dark, g, 0, 0, 0.06);
+    part(new THREE.BoxGeometry(0.03, 0.08, 0.5), steel, g, 0, 0, 0.38);
+    blades.push(g);
+  }
+  r.armSwing = 1.1;
+  r.kickArm = 0;
+  r.custom = (s) => {
+    const k = s.kick;
+    r.armR.rotation.x += -1.3 * k;
+    r.armR.rotation.z = -1.1 * Math.sin(k * PI);
+    r.armL.rotation.x += -1.3 * k;
+    r.armL.rotation.z = 1.1 * Math.sin(k * PI);
+    r.torso.rotation.x += s.move * 0.12;
   };
-  body('body', r.torso, 0, hipY, 28, 2.7);
-  r.head.position.set(0, neckY - hipY, 0);
-  body('head', r.head, 0, neckY, 24, 2.15);
-  for (const [name, grp, px] of [['legL', r.legL, xOf(358)], ['legR', r.legR, xOf(236)]]) {
-    grp.position.x = px;
-    body(name, grp, px, hipY, 20, 2.3);
-  }
-  for (const [name, grp, px] of [['armL', r.armL, xOf(402)], ['armR', r.armR, xOf(190)]]) {
-    grp.position.set(px, shoulderY - hipY, 0);
-    body(name, grp, px, shoulderY, 14, 2);
-  }
+  r.acc = { blades }; // accesorios que usa la vista en primera persona
+  return r;
+}
+
+// --- Tajo: zanjero con hacha. Hoja realista; el hacha y el farol van aparte. ---------
+function tajo() {
+  const d = P_TAJO, U = d.u, P = d.piv, hipY = P.hip, K = d.alto / 1.75; // K: escala de los accesorios
+  // Píxel de la hoja original (vista de frente, eje del cuerpo en x = 357) a coordenadas del cuerpo.
+  const yOf = (py) => (d.bot - py) * U, xOf = (px) => (px - 357) * U;
+  const r = sheetRig(d, 'hoja-tajo.webp', { headPow: 2.1, bodyPow: 2.6 });
 
   // Farol sobre la cadera derecha y hacha colgada a la espalda (asoma sobre el hombro derecho).
   const steel = std(0xffffff, { map: tex('mat-acero.webp'), metalness: 0.7, roughness: 0.4, ...steelN() });
   const wood = std(0x5e3a1e, { roughness: 0.8 }), brass = std(0xc9962e, { metalness: 0.6, roughness: 0.35 });
   const lamp = glow(0x9dff3a, 1.6);
   const lantern = new THREE.Group();
-  lantern.position.set(xOf(206), yOf(418) - hipY, -0.22 * K);
+  lantern.position.set(xOf(262), yOf(470) - hipY, -0.06);
   lantern.scale.setScalar(K);
   r.torso.add(lantern);
   part(new THREE.SphereGeometry(0.062, 12, 10), lamp, lantern, 0, -0.07, 0).castShadow = false;
@@ -362,7 +299,7 @@ function tajo() {
     return g;
   };
   const stowed = new THREE.Group();
-  stowed.position.set(xOf(196), yOf(175) - hipY, -0.26 * K);
+  stowed.position.set(xOf(275), yOf(185) - hipY, -0.34); // detrás de la mochila
   stowed.rotation.set(0.1, -PI / 2, -0.5);
   stowed.scale.setScalar(K);
   r.torso.add(stowed);
@@ -371,7 +308,7 @@ function tajo() {
 
   // Hacha en la mano: solo aparece durante el golpe.
   const axe = new THREE.Group();
-  axe.position.set(xOf(116) - xOf(190), yOf(560) - shoulderY, 0.03);
+  axe.position.set(xOf(165) - P.armR, yOf(495) - P.shoulder, 0.03); // en la mano
   r.armR.add(axe);
   axe.rotation.x = PI / 2; // el mango sale hacia adelante de la mano
   axe.scale.setScalar(K);

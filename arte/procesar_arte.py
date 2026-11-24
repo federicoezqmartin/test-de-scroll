@@ -8,7 +8,9 @@ OUT='public/arte/'; REF='arte/referencias/'
 os.makedirs(OUT,exist_ok=True); os.makedirs(REF,exist_ok=True)
 SRC={'hoja-tuerca':'3e419a76','guia-tuerca':'62ca7c37','guia-brasa':'30347cb9','guia-nox':'bb32d7f7','guia-pompa':'89765357',
      'tex-arena':'4fbcb025','tex-piedra':'c2994ab8','tex-cajon':'374512b4','tex-pasto':'0cc59fa8','nucleo':'4c952efa','logo':'75a5c3c8',
-     'hoja-tajo':'0ef6e144','pose-tajo':'c5a35fba'}
+     'hoja-tajo':'0ef6e144','pose-tajo':'c5a35fba','hoja-tajo-realista':'tajo-realista',
+     'hoja-tuerca-realista':'tuerca-realista','hoja-brasa-realista':'brasa-realista','hoja-nox-realista':'nox-realista',
+     'hoja-pompa-realista':'pompa-realista','hoja-zip-realista':'zip-realista'}
 im={k:Image.open(U+v+'-image.png').convert('RGB') for k,v in SRC.items()}
 for k,v in im.items():
     r=v.copy(); r.thumbnail((1400,1400)); r.save(REF+k+'.webp',quality=80)
@@ -51,11 +53,13 @@ def fit(img,maxh,maxw=10**6):
     r=min(maxh/img.height,maxw/img.width); return img.resize((max(1,round(img.width*r)),max(1,round(img.height*r))),Image.LANCZOS)
 
 fichas={
- 'tuerca':cut(im['hoja-tuerca'],(25,20,580,890),tol=14,shadow=0.08),
- 'brasa':cut(im['guia-brasa'],(12,598,298,888),tol=16,shadow=0.14),
- 'nox':cut(im['guia-nox'],(20,606,270,888),tol=16,shadow=0.14),
- 'pompa':cut(im['guia-pompa'],(18,600,268,888),tol=16,shadow=0.14),
- 'tajo':cut(im['pose-tajo'],(250,60,960,1254),tol=60,erode=2),
+ # Retratos del menú: la vista de frente de cada hoja realista.
+ 'tuerca':cut(im['hoja-tuerca-realista'],(78,0,514,1024),tol=16),
+ 'brasa':cut(im['hoja-brasa-realista'],(22,0,549,1024),tol=16),
+ 'nox':cut(im['hoja-nox-realista'],(58,0,508,1024),tol=16),
+ 'pompa':cut(im['hoja-pompa-realista'],(29,0,539,1024),tol=16),
+ 'zip':cut(im['hoja-zip-realista'],(134,0,557,941),tol=16),
+ 'tajo':cut(im['hoja-tajo-realista'],(140,0,580,925),tol=16),
 }
 for k,v in fichas.items(): fit(v,420).save(OUT+f'ficha-{k}.webp',quality=88)
 fit(cut(im['nucleo'],(0,0,1254,1254),tol=70,erode=2),256).save(OUT+'nucleo.webp',quality=90)

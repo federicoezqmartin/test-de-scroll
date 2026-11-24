@@ -27,5 +27,5 @@ export function preloadArt() {
   for (const n of ['piedra.webp', 'cajon.webp', 'nucleo.webp', 'mat-acero.webp']) tex(n);
   for (const n of ['arena-n.webp', 'pasto-n.webp']) tex(n, { repeat: true, data: true });
   for (const n of ['piedra-n.webp', 'cajon-n.webp', 'mat-acero-n.webp']) tex(n, { data: true });
-  for (const n of ['tajo-hoja.webp', 'hoja-tuerca.webp', 'hoja-brasa.webp', 'hoja-nox.webp', 'hoja-pompa.webp']) tex(n);
+  for (const n of ['hoja-tajo.webp', 'hoja-tuerca.webp', 'hoja-brasa.webp', 'hoja-nox.webp', 'hoja-pompa.webp', 'hoja-zip.webp']) tex(n);
 }

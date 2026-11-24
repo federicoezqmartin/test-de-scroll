@@ -1656,7 +1656,7 @@ export class Match {
     if (Math.random() < 0.3) fx.puff(r.x, 1.8, r.z, { n: 1, size: 0.6, life: 1.6, alpha: 0.22, rise: 0.9, speed: 0.2, color: 0xd6ffb0 });
     for (const f of this.fighters) {
       if (!f.alive || f.def.id !== 'brasa' || !(f.team === ME || f.visTo[ME])) continue;
-      fx.burst(f.x, 1.7 + f.airY, f.z, { n: 1, color: [0xff7a12, 0xffc21a], speed: 0.5, up: 1.6, life: 0.7, size: 0.05, grav: -1.5, drag: 1 });
+      fx.burst(f.x, 0.95 + f.airY, f.z, { n: 1, color: [0xff7a12, 0xffc21a], speed: 0.5, up: 1.6, life: 0.7, size: 0.05, grav: -1.5, drag: 1 }); // de los guantes
     }
     // Malheridos: gotean sangre, pierden aceite y humo, o se les apaga la lava.
     for (const f of this.fighters) {
