@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { MAP_HALF } from './data.js';
 import { tex } from './assets.js';
-import { waterMaterial, seaMaterial, grassMaterial, grassHeight } from './shaders.js';
+import { waterMaterial, seaMaterial, grassMaterial, grassHeight, stoneMaterial } from './shaders.js';
 
 export const T = { FLOOR: 0, WALL: 1, CRATE: 2, WATER: 3, BUSH: 4, CORE: 5 };
 const CHAR = { '.': T.FLOOR, '#': T.WALL, X: T.CRATE, '~': T.WATER, g: T.BUSH, M: T.CORE };
@@ -227,7 +227,7 @@ export class World {
     const floor = new THREE.InstancedMesh(floorGeo, floorMat, W * H);
     floor.receiveShadow = true;
     let i = 0;
-    const waterTiles = [], bushTiles = [], walls = [], crates = [], sandQuads = [], grassQuads = [];
+    const waterTiles = [], bushTiles = [], walls = [], crates = [], sandQuads = [];
     for (let r = 0; r < H; r++)
       for (let c = 0; c < W; c++) {
         const t = this.type(c, r);
@@ -240,27 +240,31 @@ export class World {
         floor.setMatrixAt(i, dummy.matrix);
         col.set(water ? 0x1b7388 : t === T.BUSH ? 0x3d5a1e : 0x7d5a30);
         floor.setColorAt(i++, col);
-        const shade = ((c + r) % 2 === 0 ? 1 : 0.92) * (0.97 + rand() * 0.06);
+        // Debajo del pasto alto va el mismo suelo: un cuadrado de césped por mata se veía, desde
+        // arriba, como un bloque. La mata la dibujan las hojas, que se desbordan un poco.
         if (water) waterTiles.push([x, z]);
-        else if (t === T.BUSH) grassQuads.push([x, z, 0.95 + rand() * 0.1]);
-        else sandQuads.push([x, z, shade]);
+        else sandQuads.push([x, z]);
         if (t === T.BUSH) bushTiles.push([x, z]);
         if (t === T.WALL) walls.push([x, z, 0.92 + rand() * 0.14, 0]);
         if (t === T.CRATE) crates.push([x, z]);
       }
     this.group.add(floor);
 
-    // Cara superior de las baldosas, con la textura continua de una a otra.
+    // Cara superior de las baldosas, con la textura continua de una a otra. El tono no va por
+    // baldosa (un damero dibujaba la grilla en el piso): sale de manchas grandes que dependen de
+    // la posición, y cada esquina toma el suyo, así se funde con la baldosa vecina.
+    const groundShade = (px, pz) => 0.84 + 0.08 * Math.sin(px * 0.71 + pz * 0.33) + 0.06 * Math.sin(px * 0.23 - pz * 0.61 + 1.7) + 0.04 * Math.sin(px * 1.9 + pz * 1.37);
     const quads = (list, uvScale, inset) => {
       const n = list.length;
       const pos = new Float32Array(n * 12), uv = new Float32Array(n * 8), cl = new Float32Array(n * 12), nor = new Float32Array(n * 12);
       const idx = [];
-      list.forEach(([x, z, shade], k) => {
+      list.forEach(([x, z], k) => {
         const a = 0.5 - inset;
         const cs = [[x - a, z - a], [x + a, z - a], [x + a, z + a], [x - a, z + a]];
         cs.forEach(([px, pz], v) => {
           pos.set([px, 0, pz], k * 12 + v * 3);
           uv.set([px / uvScale, -pz / uvScale], k * 8 + v * 2);
+          const shade = groundShade(px, pz);
           cl.set([shade, shade, shade], k * 12 + v * 3);
           nor.set([0, 1, 0], k * 12 + v * 3);
         });
@@ -274,16 +278,12 @@ export class World {
       g.setIndex(idx);
       return g;
     };
-    const sand = new THREE.Mesh(quads(sandQuads, 3.2, 0.022), this.keep(new THREE.MeshStandardMaterial({
+    const sand = new THREE.Mesh(quads(sandQuads, 3.2, 0), this.keep(new THREE.MeshStandardMaterial({
       map: tex('arena.webp', { repeat: true }), normalMap: tex('arena-n.webp', { repeat: true, data: true }),
       normalScale: new THREE.Vector2(1.5, 1.5), vertexColors: true, roughness: 0.92,
     })));
-    const lawn = new THREE.Mesh(quads(grassQuads, 2.4, 0), this.keep(new THREE.MeshStandardMaterial({
-      map: tex('pasto.webp', { repeat: true }), normalMap: tex('pasto-n.webp', { repeat: true, data: true }),
-      vertexColors: true, roughness: 1,
-    })));
-    sand.receiveShadow = lawn.receiveShadow = true;
-    this.group.add(sand, lawn);
+    sand.receiveShadow = true;
+    this.group.add(sand);
 
     // Borde de la arena.
     for (let c = -1; c <= W; c++) {
@@ -298,18 +298,23 @@ export class World {
     // Muros de piedra. Cada muro interior tiene uno o dos bloques más que, en las vistas al hombro
     // y en primera persona, suben desde adentro del bloque de abajo (ver setTall): así tapa la
     // vista lo mismo que tapa los disparos. En la vista de arriba quedan escondidos.
-    const wallGeo = this.keep(new RoundedBoxGeometry(0.985, 1, 0.985, 2, 0.07));
+    // Bloques del ancho justo de la baldosa, sin redondear y subdivididos: el material de
+    // piedra los deforma con un ruido del mundo, así los vecinos se funden en un solo muro
+    // irregular en vez de verse como cubos (ver stoneMaterial).
+    const wallGeo = this.keep(new THREE.BoxGeometry(1, 1, 1, 3, 3, 3));
     const pos = wallGeo.attributes.position;
     const shadeAttr = new Float32Array(pos.count * 3);
     for (let v = 0; v < pos.count; v++) {
-      const k = pos.getY(v) > 0.3 ? 1 : 0.7;
+      const y = pos.getY(v), k = 0.68 + 0.32 * (y + 0.5) ** 1.5; // más oscuro abajo
       shadeAttr[v * 3] = shadeAttr[v * 3 + 1] = shadeAttr[v * 3 + 2] = k;
     }
     wallGeo.setAttribute('color', new THREE.BufferAttribute(shadeAttr, 3));
-    const wallMat = this.keep(new THREE.MeshStandardMaterial({
-      map: tex('piedra.webp'), normalMap: tex('piedra-n.webp', { data: true }), normalScale: new THREE.Vector2(1.6, 1.6),
-      roughness: 0.88, vertexColors: true,
-    }));
+    const stoneMap = this.keep(tex('piedra.webp').clone()), stoneN = this.keep(tex('piedra-n.webp', { data: true }).clone());
+    for (const t of [stoneMap, stoneN]) {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.needsUpdate = true;
+    }
+    const wallMat = this.keep(stoneMaterial(stoneMap, stoneN));
     const stone = [0xffffff, 0xe9eef3, 0xf4efe6];
     this.wallStacks = [];
     this.stackTop = new Map(); // baldosa -> alto del muro bajo y cuánto suma apilado
@@ -340,24 +345,58 @@ export class World {
     this.group.add(wallMesh);
 
     // Cajones.
+    const crateScale = []; // tamaño de cada uno: el que se apila encima se apoya justo sobre él
     if (crates.length) {
-      const crateGeo = this.keep(new THREE.BoxGeometry(0.94, 0.94, 0.94));
+      const crateGeo = this.keep(new RoundedBoxGeometry(0.92, 0.92, 0.92, 2, 0.035));
       const crateMat = this.keep(new THREE.MeshStandardMaterial({
         map: tex('cajon.webp'), normalMap: tex('cajon-n.webp', { data: true }), normalScale: new THREE.Vector2(1.4, 1.4), roughness: 0.8,
       }));
       // Cada cajón trae otro encima que sube en las vistas con cámara propia (instancias crates.length+n).
       const crateMesh = (this.crateMesh = new THREE.InstancedMesh(crateGeo, crateMat, crates.length * 2));
       crateMesh.castShadow = crateMesh.receiveShadow = true;
+      // Apenas girados y de distinto tamaño: alineados a la grilla parecían cubos de juguete.
       crates.forEach(([x, z], n) => {
-        dummy.position.set(x, 0.47, z);
-        dummy.scale.set(1, 1, 1);
-        dummy.rotation.set(0, Math.floor(rand() * 4) * (Math.PI / 2), 0);
+        const sc = (crateScale[n] = 0.95 + rand() * 0.07);
+        dummy.position.set(x, 0.46 * sc, z);
+        dummy.scale.setScalar(sc);
+        dummy.rotation.set(0, Math.floor(rand() * 4) * (Math.PI / 2) + (rand() - 0.5) * 0.24, 0);
         dummy.updateMatrix();
         crateMesh.setMatrixAt(n, dummy.matrix);
       });
       dummy.rotation.set(0, 0, 0);
       this.group.add(crateMesh);
     }
+
+    // Piedritas sueltas al pie de los muros y desparramadas por el piso. No chocan con nada:
+    // solo rompen la línea recta donde el muro toca el piso y la superficie lisa de la arena.
+    const pebbles = [];
+    const open = (x, z) => {
+      const tt = this.type(this.col(x), this.row(z));
+      return tt === T.FLOOR || tt === T.BUSH;
+    };
+    for (const [x, z, , border] of walls) {
+      if (border) continue;
+      for (let k = 0; k < 3; k++) {
+        const side = Math.floor(rand() * 4), along = (rand() - 0.5) * 0.9, out = 0.53 + rand() * 0.1;
+        const px = x + (side === 0 ? out : side === 1 ? -out : along), pz = z + (side === 2 ? out : side === 3 ? -out : along);
+        if (open(px, pz)) pebbles.push([px, pz, 0.04 + rand() * 0.07]);
+      }
+    }
+    for (const [x, z] of sandQuads) if (rand() < 0.3) pebbles.push([x + (rand() - 0.5) * 0.9, z + (rand() - 0.5) * 0.9, 0.025 + rand() * 0.045]);
+    const pebbleMat = this.keep(new THREE.MeshStandardMaterial({ color: 0x9a8a78, roughness: 1, flatShading: true }));
+    const pebbleMesh = new THREE.InstancedMesh(this.keep(new THREE.IcosahedronGeometry(1, 0)), pebbleMat, Math.max(1, pebbles.length));
+    pebbleMesh.count = pebbles.length;
+    pebbles.forEach(([x, z, sc], n) => {
+      dummy.position.set(x, sc * 0.35, z);
+      dummy.scale.set(sc * (0.8 + rand() * 0.6), sc * (0.5 + rand() * 0.4), sc * (0.8 + rand() * 0.6));
+      dummy.rotation.set(rand() * 3, rand() * 3, rand() * 3);
+      dummy.updateMatrix();
+      pebbleMesh.setMatrixAt(n, dummy.matrix);
+      pebbleMesh.setColorAt(n, col.set(0x9a8a78).offsetHSL(0, 0, (rand() - 0.5) * 0.16));
+    });
+    dummy.rotation.set(0, 0, 0);
+    pebbleMesh.receiveShadow = true;
+    this.group.add(pebbleMesh);
 
     // Sombra de contacto pintada alrededor de muros y cajones (oclusión barata, en toda calidad).
     const aoList = [...walls.filter((w) => !w[3]), ...crates, [this.reactor.x, this.reactor.z]];
@@ -371,7 +410,7 @@ export class World {
     this.crates = new Map(); // baldosa -> { vida, instancia del cajón, instancia de su sombra }
     const firstCrateAo = aoList.length - 1 - crates.length;
     crates.forEach(([x, z], n) => this.crates.set(this.row(z) * W + this.col(x), {
-      hp: 1600, n, n2: crates.length + n, ao: firstCrateAo + n, x, z,
+      hp: 1600, n, n2: crates.length + n, ao: firstCrateAo + n, x, z, sc: crateScale[n] ?? 1,
       rot: rand() * 0.6 - 0.3, jx: (rand() - 0.5) * 0.06, jz: (rand() - 0.5) * 0.06,
     }));
     this.tall = -1; // 0: todo bajo (vista de arriba) · 1: muros, cajones y pasto altos
@@ -413,7 +452,7 @@ export class World {
     this.group.add(this.water);
 
     // Pasto alto: matas de hojas finas; el viento y el paso de los luchadores van en el shader.
-    const PER = 18;
+    const PER = 26;
     const bladeGeo = this.keep(new THREE.ConeGeometry(0.085, 1, 4, 3).translate(0, 0.5, 0));
     const bp = bladeGeo.attributes.position;
     const bc = new Float32Array(bp.count * 3);
@@ -435,7 +474,7 @@ export class World {
       this.bushStart.set(this.row(z) * W + this.col(x), n * PER);
       for (let k = 0; k < PER; k++) {
         const sx = 0.8 + rand() * 0.8;
-        dummy.position.set(x + (rand() - 0.5) * 0.94, 0, z + (rand() - 0.5) * 0.94);
+        dummy.position.set(x + (rand() - 0.5) * 1.12, 0, z + (rand() - 0.5) * 1.12);
         dummy.scale.set(sx, 0.6 + rand() * 0.45, sx);
         dummy.rotation.set((rand() - 0.5) * 0.5, rand() * 6.28, (rand() - 0.5) * 0.5);
         dummy.updateMatrix();
@@ -569,7 +608,8 @@ export class World {
     if (this.crateMesh) {
       for (const k of this.crates.values()) {
         if (k.hp <= 0) continue;
-        d.position.set(k.x + k.jx * t, 0.47 + 0.9 * t, k.z + k.jz * t);
+        // escondido adentro del de abajo (t = 0) o apoyado justo encima (t = 1)
+        d.position.set(k.x + k.jx * t, 0.46 * k.sc + (0.46 * k.sc + 0.423) * t, k.z + k.jz * t);
         d.scale.setScalar(0.92);
         d.rotation.set(0, k.rot, 0);
         d.updateMatrix();

@@ -128,6 +128,57 @@ export function seaMaterial(halfW, halfH) {
   });
 }
 
+// --- Piedra de los muros --------------------------------------------------------
+// Los muros son un bloque por baldosa, pero no tienen que verse como cubos. Los vértices se
+// corren con un ruido que depende de la posición en el mundo: dos bloques vecinos se deforman
+// igual donde se tocan, así que quedan pegados, sin rajas, y forman una sola masa irregular.
+// La textura también se apoya en el mundo (según hacia dónde mira cada cara), así corre de un
+// bloque al otro en vez de repetirse igual en cada cara. Solo para mallas instanciadas.
+const NOISE3 = /* glsl */ `
+float hash31(vec3 p) {
+  p = fract(p * 0.3183099 + 0.1);
+  p *= 17.0;
+  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+float vnoise3(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(hash31(i), hash31(i + vec3(1.0, 0.0, 0.0)), f.x), mix(hash31(i + vec3(0.0, 1.0, 0.0)), hash31(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+             mix(mix(hash31(i + vec3(0.0, 0.0, 1.0)), hash31(i + vec3(1.0, 0.0, 1.0)), f.x), mix(hash31(i + vec3(0.0, 1.0, 1.0)), hash31(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
+}
+`;
+export function stoneMaterial(map, normalMap, { rough = 0.07, scale = 0.45 } = {}) {
+  const m = new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.88, vertexColors: true });
+  return patch(m, 'tz-stone', (s) => {
+    s.uniforms.uRough = { value: rough };
+    s.vertexShader = s.vertexShader
+      .replace('#include <common>', `#include <common>\nuniform float uRough;\n${NOISE3}`)
+      .replace('#include <uv_vertex>', /* glsl */ `#include <uv_vertex>
+        {
+          mat4 im = modelMatrix * instanceMatrix;
+          vec4 sw = im * vec4(position, 1.0);
+          vec3 sn = abs(normalize(mat3(im) * normal));
+          vec2 suv = (sn.y > 0.5 ? sw.xz : sn.x > 0.5 ? sw.zy : sw.xy) * ${scale.toFixed(3)};
+          #ifdef USE_MAP
+            vMapUv = suv;
+          #endif
+          #ifdef USE_NORMALMAP
+            vNormalMapUv = suv;
+          #endif
+        }`)
+      .replace('#include <begin_vertex>', /* glsl */ `#include <begin_vertex>
+        {
+          mat4 im = modelMatrix * instanceMatrix;
+          vec3 bw = (im * vec4(position, 1.0)).xyz;
+          vec3 off = vec3(vnoise3(bw * 1.8), vnoise3(bw * 1.8 + 17.3), vnoise3(bw * 1.8 + 31.7)) - 0.5;
+          off += (vec3(vnoise3(bw * 4.6 + 5.1), vnoise3(bw * 4.6 + 9.4), vnoise3(bw * 4.6 + 2.2)) - 0.5) * 0.4;
+          off *= uRough * 2.0;
+          off.y *= smoothstep(0.0, 0.3, bw.y); // la base queda apoyada en el piso
+          transformed += inverse(mat3(im)) * off;
+        }`);
+  });
+}
+
 // --- Pasto alto ---------------------------------------------------------------
 // Cada hoja se dobla con el viento y se aparta de los luchadores cercanos.
 export function grassMaterial() {
