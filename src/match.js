@@ -10,6 +10,7 @@ import { shaderTime, grassFighters, grassShocks, shieldMaterial, zoneMaterial, i
 import { Debris } from './physics.js';
 import { SKILL, TEAM_PALETTES } from './settings.js';
 import { ViewModel } from './viewmodel.js';
+import { LOOKS, mixLook } from './looks.js';
 
 const R = 0.4; // radio de un luchador
 const DEG = Math.PI / 180;
@@ -107,6 +108,9 @@ export class Match {
     this.yaw = Math.PI; // hacia dónde mira la cámara en las vistas al hombro y en primera persona
     this.pitch = -0.15;
     this.camMode = null; // vista que se está mostrando (al morir se ve desde arriba)
+    // Luz y color de la vista (ver looks.js): el actual y del que se parte al cambiar de vista.
+    this.look = { ...LOOKS.arriba };
+    this.lookPrev = { ...LOOKS.arriba };
     this.blend = 1;
     this.camFrom = new THREE.Vector3();
     this.lookFrom = new THREE.Vector3();
@@ -123,7 +127,8 @@ export class Match {
     this.limZ1 = 10;
 
     // Sol cálido con sombras, relleno frío sin sombras desde el lado de la cámara.
-    scene.add(new THREE.HemisphereLight(0xcfe6ff, 0xa9814e, 0.6));
+    this.hemi = new THREE.HemisphereLight(0xcfe6ff, 0xa9814e, 0.6);
+    scene.add(this.hemi);
     const sun = (this.sun = new THREE.DirectionalLight(0xffdfb0, 3.4));
     sun.castShadow = true;
     sun.shadow.mapSize.set(q.shadow, q.shadow);
@@ -131,7 +136,7 @@ export class Match {
     sun.shadow.bias = -0.0003;
     sun.shadow.normalBias = 0.025;
     scene.add(sun, sun.target);
-    const fill = new THREE.DirectionalLight(0x9fd0ff, 0.32);
+    const fill = (this.fill = new THREE.DirectionalLight(0x9fd0ff, 0.32));
     fill.position.set(8, 10, 12);
     scene.add(fill);
     this.sunDir = new THREE.Vector3(-12, 17, -9).normalize();
@@ -265,6 +270,7 @@ export class Match {
     f.shield.visible = false;
     rig.root.add(f.shield);
     rig.fxU.uRim.value.set(isPlayer ? 0xfff0c0 : TEAMS[team].color).multiplyScalar(isPlayer ? 0.35 : 0.5);
+    f.rimBase = rig.fxU.uRim.value.clone(); // cada vista lo muestra más o menos (look.rim)
     f.blob = new THREE.Mesh(this.blobGeo, this.blobMat);
     f.blob.renderOrder = 1;
     this.scene.add(f.blob);
@@ -1579,6 +1585,7 @@ export class Match {
     if (mode !== this.camMode) {
       if (this.camMode) {
         this.blend = 0;
+        Object.assign(this.lookPrev, this.look);
         this.camFrom.copy(cam.position);
         this.lookFrom.copy(this.lookCur);
         this.fovFrom = cam.fov;
@@ -1591,6 +1598,7 @@ export class Match {
     }
     this.blend = Math.min(1, this.blend + rawDt * 2.5);
     const k = this.blend * this.blend * (3 - 2 * this.blend);
+    this.applyLook(k);
     if (k < 1) {
       cam.position.lerpVectors(this.camFrom, pos, k);
       this.lookCur.lerpVectors(this.lookFrom, look, k);
@@ -1619,6 +1627,20 @@ export class Match {
     st.addScaledVector(this.lightRight, Math.round(rx / texel) * texel - rx).addScaledVector(this.lightUp, Math.round(ry / texel) * texel - ry);
     this.sun.target.position.copy(st);
     this.sun.position.copy(st).addScaledVector(this.sunDir, 34);
+  }
+
+  // Luz, niebla y borde de luz de la vista actual, mezclados con los de la anterior mientras
+  // dura el cambio de cámara. La exposición y el color los aplica Gfx (main.js le pasa this.look).
+  applyLook(k) {
+    const L = mixLook(this.lookPrev, LOOKS[this.camMode], k, this.look);
+    this.hemi.intensity = L.hemi;
+    this.sun.intensity = L.sun;
+    this.fill.intensity = L.fill;
+    if (this.scene.environment) this.scene.environmentIntensity = L.env;
+    this.scene.fog.near = L.fogNear;
+    this.scene.fog.far = L.fogFar;
+    for (const f of this.fighters) f.rig.fxU.uRim.value.copy(f.rimBase).multiplyScalar(L.rim);
+    this.vm.rig.fxU.uRim.value.copy(this.player.rimBase).multiplyScalar(L.rim);
   }
 
   // Vida de fondo: motas en el aire, vapor del reactor, brasas y destellos de los núcleos.

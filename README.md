@@ -76,6 +76,7 @@ La dificultad, el nombre y el color de equipo en el 3D se aplican al empezar la 
 - **Materiales:** relieve (normal maps) generado a partir de las texturas de arena, piedra, madera y acero.
 - **Shaders propios** (`src/shaders.js`): agua de las piletas con espuma y red de luz, mar con oleaje hacia la costa, pasto que se mueve con el viento y se abre al paso de los luchadores, borde de luz del color del equipo y destello de daño en los personajes, escudo, zonas de efecto e indicador de puntería.
 - **Posprocesado** (`src/gfx.js`): oclusión ambiental, bloom, desenfoque leve de maqueta arriba y abajo, corrección de color, viñeta y grano.
+- **Un look por vista** (`src/looks.js`): exposición, luces, niebla, color y borde de luz cambian con la vista y se mezclan al pasar de una a otra. Arriba es brillante y saturada, para leer todo de un vistazo; al hombro, colorida y luminosa; en primera persona, sobria y realista, con sombras profundas, más contraste, bruma en la distancia, viñeta y grano. Son solo valores, así que en celular cuesta lo mismo.
 - **Efectos:** humo y polvo, marcas de quemado, luces de destello en explosiones, polvo al caminar, motas en el aire, vapor del reactor.
 
 Hay tres niveles, que se eligen en Configuración:

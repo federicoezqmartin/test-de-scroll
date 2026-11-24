@@ -23,6 +23,7 @@ Juego de navegador: arena 3 contra 3 en 3D con three.js y Vite, sin framework. U
 - `src/viewmodel.js`: brazos y armas de la primera persona. Usa piezas de un segundo cuerpo del personaje (los brazos, o los accesorios de `r.acc`) colgadas de la cámara en un grupo achicado. Ese cuerpo tiene una luz mínima propia (`uLift` de `heroUniforms`, en `src/shaders.js`).
 - Lo que pasa cerca del ojo: `nearFade` en `src/fx.js` achica partículas, humo y halos; `NEAR_K`, `NEAR_BIG`, `OWN_HALO` y `fx.ownShot` en `src/match.js` hacen nacer chico y apagado lo que dispara uno en primera persona.
 - `src/shaders.js` y `src/gfx.js`: shaders propios, posprocesado y niveles de calidad.
+- `src/looks.js`: el look de cada vista (exposición, luces, niebla, color, borde de luz). `Match.applyLook` mezcla el de la vista anterior con el nuevo y `Gfx.setLook` aplica la parte de color.
 - `src/settings.js`: configuración (valores por defecto y la lista de controles de la pantalla). `src/ui.js`: interfaz en DOM. `src/input.js`: teclado, mouse (con captura en las vistas con cámara propia) y táctil.
 - `arte/`: scripts de Python que generan `public/arte/` y los perfiles desde `arte/originales/`.
 
@@ -41,6 +42,7 @@ Juego de navegador: arena 3 contra 3 en 3D con three.js y Vite, sin framework. U
 
 ## Estado
 
-- El trabajo está en la rama `claude/busy-gauss-lwcnlr` (pull request #1). Netlify publica una vista previa de cada cambio del pull request.
+- El pull request #1 (rama `claude/busy-gauss-lwcnlr`) está fusionado en `main`, que Netlify publica en https://testdescroll.netlify.app/. El trabajo nuevo va en ramas aparte con su propio pull request, que Netlify publica como vista previa.
+- Cambio de estilo en curso, en la rama `claude/estilo-realista`: primera persona realista, al hombro colorida, desde arriba brillante y legible. Hecho: un look de luz y color por vista (`src/looks.js`). Sigue: rehacer los seis personajes con aspecto realista (con arte nuevo generado en ChatGPT) y después el escenario, que todavía se ve de cubos.
 - Modo en primera persona, en cinco etapas, todas hechas: 1 (cámara y controles), 2 (arena alta, cielo, horizonte), 3 (armas vistas en primera persona y arco punteado de los ataques por el aire), 4 (minimapa redondo que gira con la cámara y ayuda de puntería en táctil: fricción, imán y marca, con opción en Controles táctiles) y 5 (ajuste fino: lo que pasa pegado al ojo se achica y se apaga, lo que dispara uno nace chico y apagado, la luz de la súper propia va más adelante y más suave, y el arma tiene una luz mínima propia; los puños de Brasa van más altos y con la lava más encendida).
 - Falta probarlo en un celular y con una placa de video de verdad: las pruebas renderizan por software y no miden rendimiento ni cómo se siente la ayuda de puntería.
