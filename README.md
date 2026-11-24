@@ -153,7 +153,7 @@ Los seis personajes son personas de aspecto realista y se arman a partir de su h
 - **Cuerpos:** `arte/perfilar_hojas.py` toma de cada hoja las tres vistas, mide la silueta de cada parte (cabeza, torso, brazos, piernas) y guarda las vistas juntas en `public/arte/hoja-<id>.webp` y las medidas en `src/perfiles/<id>.json`. Con eso `models.js` levanta cada cuerpo por rodajas y lo pinta proyectando la hoja, así se ve como el dibujo desde cualquier ángulo. Las brasas de los guantes de Brasa brillan solas.
 - **Armas:** van aparte, hechas con formas simples, porque se mueven: la remachadora de Tuerca, la ballesta de Nox, el frasco de Pompa, las cuchillas de Zip, y el hacha y el farol de Tajo. Se ubican en la mano que mide el perfil.
 - **Retratos del menú:** `procesar_arte.py` recorta la vista de frente de cada hoja.
-- **De cerca:** en primera persona el brazo queda pegado a la cámara y la piel de la hoja se ve estirada; el método por rodajas no aguanta un primer plano tan cercano.
+- **Primera persona:** los brazos no salen de la hoja, porque pegados a la cámara la piel proyectada se veía estirada. Son propios (`src/brazos.js`): forma torneada con bíceps, codo, antebrazo y puño, y piel, tela, cuero o vendas con texturas generadas por código y los colores de cada personaje.
 
 Para ajustar un personaje (qué filas ocupa cada parte, dónde giran los brazos) se edita la tabla `HEROES` de `perfilar_hojas.py` y se vuelve a correr; con `DEBUG_DIR` guarda una imagen de control con lo que midió.
 

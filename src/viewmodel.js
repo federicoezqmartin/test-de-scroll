@@ -1,12 +1,14 @@
-// Armas y manos vistas en primera persona. Se arman con piezas del propio personaje: los brazos
-// que salen de su hoja de arte (Tuerca, Brasa, Tajo), los brazos con cuchillas de Zip, la
-// ballesta de Nox y el frasco de Pompa. Para eso se construye un segundo cuerpo del personaje,
-// que no se dibuja, y se le sacan esas piezas.
+// Armas y manos vistas en primera persona. Los brazos son propios (brazos.js): los del cuerpo se
+// pintan con la hoja de arte y, pegados a la cámara, se veían estirados. Las armas salen de un
+// segundo cuerpo del personaje, que no se dibuja: la remachadora de Tuerca, la ballesta de Nox,
+// el frasco de Pompa, las cuchillas de Zip y el hacha de Tajo.
 //
 // Todo cuelga de la cámara dentro de un grupo achicado: visto desde la cámara se ve igual que
 // a tamaño real, pero ocupa poco lugar y no se mete en los muros cuando estás pegado a uno.
 import * as THREE from 'three';
 import { buildHero } from './models.js';
+import { buildArm, ARM_STYLES } from './brazos.js';
+import { patchHero } from './shaders.js';
 
 const PI = Math.PI;
 const SCALE = 0.25;
@@ -55,8 +57,8 @@ export class ViewModel {
     this.rig.root.traverse(collect);
     this.build();
     this.root.traverse(collect);
-    // Luz mínima propia (ver heroUniforms): la piedra de Brasa es oscura y necesita más.
-    this.rig.fxU.uLift.value = heroId === 'brasa' ? 0.45 : 0.2;
+    // Luz mínima propia (ver heroUniforms): el arma se lee aunque el sol le dé de espaldas.
+    this.rig.fxU.uLift.value = 0.15;
     // Sin sombras: el arma está, de verdad, a centímetros del ojo, y las sombras del escenario
     // la dejarían a oscuras cada vez que pasás junto a un muro.
     this.root.traverse((o) => {
@@ -96,15 +98,20 @@ export class ViewModel {
     return m;
   }
 
-  // Punta del brazo, medida en la geometría (el brazo cuelga hacia -y desde el hombro).
-  armTip(arm) {
-    let tip = 0;
-    for (const m of arm.children) {
-      if (!m.isMesh) continue;
-      m.geometry.computeBoundingBox();
-      tip = Math.min(tip, m.geometry.boundingBox.min.y + m.position.y);
-    }
-    return tip;
+  // Brazo propio del personaje (brazos.js), con el mismo borde de luz y luz mínima que el resto.
+  arm(side) {
+    const a = buildArm(ARM_STYLES[this.id], side, (m) => patchHero(m, this.rig.fxU));
+    this.texs.push(...a.userData.texs);
+    if (a.userData.embers) (this.embers ||= []).push(a.userData.embers);
+    return a;
+  }
+
+  // Pasa un arma del cuerpo de repuesto a la mano del brazo propio.
+  grab(arm, part, x = 0, y = 0, z = 0) {
+    part.position.copy(arm.userData.hand).add(new THREE.Vector3(x, y, z));
+    part.visible = true;
+    arm.add(part);
+    return part;
   }
 
   build() {
@@ -112,22 +119,22 @@ export class ViewModel {
     switch (this.id) {
       case 'tuerca': {
         // El brazo con la remachadora, apuntando hacia la mira. Dispara desde la punta del caño.
-        const L = -this.armTip(r.armR), g = r.acc.gun.position;
-        this.main = this.slot(r.armR, [0.32, -0.3, -1.15], [-0.22, 0.3, -1], L);
-        this.muzzle(r.armR, g.x, g.y - 0.34, g.z + 0.03);
+        const arm = this.arm('R'), L = arm.userData.len;
+        this.grab(arm, r.acc.gun, 0, 0, 0.01);
+        this.main = this.slot(arm, [0.32, -0.3, -1.15], [-0.22, 0.3, -1], L);
+        this.muzzle(arm, 0, arm.userData.hand.y - 0.34, 0.04);
         this.flash = this.flashSprite(0x8ff6ff);
         this.muzzles[0].add(this.flash);
         break;
       }
       case 'brasa': {
-        // Los dos puños de piedra abajo, a los costados. Van casi parados para que se vea su
-        // cara de adelante, la de las grietas de lava, y bastante altos: más abajo solo
-        // asomaba la punta de roca oscura y la lava quedaba fuera de cuadro.
-        const L = -this.armTip(r.armR);
-        this.main = this.slot(r.armR, [0.46, -0.2, -1.15], [-0.25, 1, -0.75], L * 0.9, { scale: 0.75, roll: 0.4 });
-        this.off = this.slot(r.armL, [-0.46, -0.2, -1.15], [0.25, 1, -0.75], L * 0.9, { scale: 0.75, roll: -0.4 });
-        this.muzzle(r.armR, 0, -L * 0.85, 0);
-        this.muzzle(r.armL, 0, -L * 0.85, 0);
+        // Los dos puños abajo, a los costados, casi parados: así se ven los nudillos y las brasas
+        // del guante.
+        const R = this.arm('R'), Lf = this.arm('L'), L = R.userData.len;
+        this.main = this.slot(R, [0.42, -0.24, -1.1], [-0.25, 1, -0.75], L, { scale: 0.8, roll: 0.4 });
+        this.off = this.slot(Lf, [-0.42, -0.24, -1.1], [0.25, 1, -0.75], L, { scale: 0.8, roll: -0.4 });
+        this.muzzle(R, 0, -L, 0);
+        this.muzzle(Lf, 0, -L, 0);
         break;
       }
       case 'nox': {
@@ -139,44 +146,35 @@ export class ViewModel {
         break;
       }
       case 'pompa': {
-        // La mano con su guante de goma amarillo sosteniendo el frasco; el frasco desaparece al
-        // tirarlo y vuelve.
-        const hand = new THREE.Group();
-        const skin = new THREE.MeshStandardMaterial({ color: 0xd9ad2e, roughness: 0.45 });
-        const palm = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), skin);
-        palm.scale.set(1.1, 0.7, 1.2);
-        hand.add(palm);
-        for (const fx of [-0.06, 0, 0.06]) {
-          const finger = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), skin);
-          finger.position.set(fx, 0.04, 0.1);
-          hand.add(finger);
-        }
-        const flask = r.acc.flask;
-        hand.add(flask);
-        flask.position.set(0, 0.15, 0.02);
-        flask.visible = true;
+        // El brazo con el guante amarillo y el frasco sobre el puño; el frasco desaparece al
+        // tirarlo y vuelve. Con el brazo levantado, su "arriba" es el frente del brazo (+z).
+        const arm = this.arm('R'), L = arm.userData.len;
+        const flask = this.grab(arm, r.acc.flask, 0, -0.03, 0.08);
+        flask.rotation.x = PI / 2;
         this.flask = flask;
-        this.main = this.slot(hand, [0.36, -0.38, -1.2], [-0.1, 0.25, -1], 0, { arm: false, scale: 0.85 });
+        this.main = this.slot(arm, [0.34, -0.36, -1.05], [-0.12, 0.3, -1], L, { scale: 0.9 });
         this.muzzle(flask, 0, 0, 0);
         break;
       }
       case 'zip': {
         // Con los brazos hacia adelante, las cuchillas van a lo largo del brazo, más allá del puño.
-        for (const g of r.acc.blades) g.rotation.x = PI / 2;
-        const L = -this.armTip(r.armR);
-        this.main = this.slot(r.armR, [0.3, -0.36, -0.8], [-0.25, 0.3, -1], L, { scale: 0.8 });
-        this.off = this.slot(r.armL, [-0.3, -0.36, -0.8], [0.25, 0.3, -1], L, { scale: 0.8 });
-        this.muzzle(r.armR, 0, -L - 0.4, 0);
-        this.muzzle(r.armL, 0, -L - 0.4, 0);
+        const arms = [this.arm('R'), this.arm('L')], L = arms[0].userData.len;
+        // r.acc.blades = [izquierda, derecha]
+        this.grab(arms[0], r.acc.blades[1]).rotation.x = PI / 2;
+        this.grab(arms[1], r.acc.blades[0]).rotation.x = PI / 2;
+        this.main = this.slot(arms[0], [0.3, -0.36, -0.8], [-0.25, 0.3, -1], L, { scale: 0.8 });
+        this.off = this.slot(arms[1], [-0.3, -0.36, -0.8], [0.25, 0.3, -1], L, { scale: 0.8 });
+        this.muzzle(arms[0], 0, -L - 0.4, 0);
+        this.muzzle(arms[1], 0, -L - 0.4, 0);
         break;
       }
       case 'tajo': {
         // El brazo con el hacha levantada, a la derecha.
-        r.acc.axe.visible = true;
-        r.acc.axe.rotation.x = PI / 2 + 0.55; // el mango se inclina hacia adelante, para que el filo entre en cuadro
-        const L = -this.armTip(r.armR);
-        this.main = this.slot(r.armR, [0.36, -0.42, -0.85], [-0.15, 0.35, -1], L, { roll: -0.5 });
-        this.muzzle(r.armR, 0, -L, 0);
+        const arm = this.arm('R'), L = arm.userData.len;
+        const axe = this.grab(arm, r.acc.axe, 0, 0, 0.03);
+        axe.rotation.x = PI / 2 + 0.55; // el mango se inclina hacia adelante, para que el filo entre en cuadro
+        this.main = this.slot(arm, [0.36, -0.42, -0.85], [-0.15, 0.35, -1], L, { roll: -0.5 });
+        this.muzzle(arm, 0, -L, 0);
         break;
       }
       default:
@@ -281,7 +279,7 @@ export class ViewModel {
         break;
       }
       case 'brasa': {
-        const lava = this.rig.art.userData.glow?.value;
+        const lava = { w: 0 }; // fuerza de las brasas del guante, aplicada al final
         if (p.action && p.action.type === 'leap') {
           // En el salto los dos puños suben sobre la cabeza y bajan al caer.
           const u = p.action.t / p.action.dur;
@@ -299,9 +297,10 @@ export class ViewModel {
             s.position.z -= punch * 0.3;
             s.position.y += punch * 0.1;
           }
-          // En reposo la lava late bien encendida: es lo que hace que los puños se lean.
-          if (lava) lava.w = 2.8 + Math.sin(time * 3) * 0.4 + punch * 1.4;
+          // En reposo las brasas laten encendidas; al golpear se avivan.
+          lava.w = 2.8 + Math.sin(time * 3) * 0.4 + punch * 1.4;
         }
+        for (const m of this.embers || []) m.emissiveIntensity = lava.w * 0.35;
         break;
       }
       case 'nox':
